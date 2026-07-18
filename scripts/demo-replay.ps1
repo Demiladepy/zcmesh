@@ -27,6 +27,12 @@ if (-not (Test-Path $Zcm) -or (Get-Item $Zcm).Length -lt 40) {
     exit 1
 }
 
+& (Join-Path $Bin "zcmesh_inspect.exe") $Zcm
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "INSPECT_FAIL"
+    exit 1
+}
+
 $smokeOut = Join-Path $Root "replay-smoke-out.txt"
 $smokeErr = Join-Path $Root "replay-smoke-err.txt"
 Remove-Item $smokeOut, $smokeErr -ErrorAction SilentlyContinue
@@ -40,7 +46,7 @@ while ((Get-Date) -lt $deadline) {
     Start-Sleep -Milliseconds 300
 }
 
-& (Join-Path $Bin "zcmesh_replay.exe") --in $Zcm --target 127.0.0.1:9900 --transport tcp --rate $Rate
+& (Join-Path $Bin "zcmesh_replay.exe") --in $Zcm --target 127.0.0.1:9900 --transport tcp --pace capture
 Wait-Process -Id $smoke.Id -Timeout 35 -ErrorAction SilentlyContinue
 if (-not $smoke.HasExited) { Stop-Process -Id $smoke.Id -Force -ErrorAction SilentlyContinue }
 

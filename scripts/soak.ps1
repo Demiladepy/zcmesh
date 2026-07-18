@@ -48,6 +48,11 @@ try {
     Write-Host "==== stats :9909 ===="
     Write-Host $stats
     if ($stats -notmatch "frames_ok=") { throw "bad stats payload" }
+    if ($stats -notmatch "frames_ok=([1-9][0-9]*)") { throw "frames_ok missing or zero" }
+    $framesOk = [int64]$Matches[1]
+    if ($framesOk -lt 50) { throw "frames_ok=$framesOk too low" }
+    if ($stats -notmatch "nodes=(\d+)") { throw "nodes missing" }
+    if ([int]$Matches[1] -lt 2) { throw "expected >=2 nodes, got $($Matches[1])" }
 } catch {
     Write-Host "stats scrape failed: $_"
     foreach ($p in @($smoke) + $edges) {
@@ -62,13 +67,5 @@ foreach ($p in @($smoke) + $edges) {
 }
 
 Write-Host "==== soak result ===="
-# Operator may time out without SMOKE_OK when minFrames is huge — success = stats + edge traffic.
-$err = Get-Content $smokeErr -Raw -ErrorAction SilentlyContinue
-$statOk = $true
-Write-Host "operator log has StatsServer: $($err -match 'StatsServer')"
-if ($statOk) {
-    Write-Host "SOAK_OK"
-    exit 0
-}
-Write-Host "SOAK_FAIL"
-exit 1
+Write-Host "SOAK_OK frames_ok scrape passed"
+exit 0

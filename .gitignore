@@ -28,6 +28,7 @@ cap-*.txt
 replay-*.txt
 soak-*.txt
 failover-*.txt
+loss-*.txt
 rt-*.txt
 .DS_Store
 Thumbs.db

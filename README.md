@@ -67,6 +67,7 @@ Transport: `auto` (TCP + mesh fallback with unsent-only failover), `tcp`, `udp` 
 .\scripts\demo-replay.ps1
 .\scripts\soak.ps1
 .\scripts\soak-failover.ps1
+.\scripts\soak-loss.ps1
 ```
 
 ## Benchmark
@@ -85,5 +86,8 @@ Typical: **24 B** vs ~**67 B** JSON line, **~93%** encode CPU reduction.
 - Mesh preferred-hop probe (~500 ms) + `hop_ok` / failover counters in `--print-stats-sec`
 - Hop stamps `reserved` (hop index) and `--final` sets `LAST_HOP` + CRC rewrite
 - `soak-failover.ps1`: UDP-only operator forces `auto` → mesh; asserts `mesh_failover>0`
+- `soak-loss.ps1`: hop `--loss-pct` → capture → `inspect --expect-gaps-min`
+- Inspect: per-node seq gaps, hop index / LAST_HOP, SUMMARY line
+- Replay: `--pace capture` (default) follows `timestamp_lo` deltas; `--rate` for fixed Hz
 - Operator: NIO TCP+UDP, SPSC ring, seq gaps, `.zcm` record (`record=path.zcm`)
 - Future UI binds to `OperatorRuntime` / `OperatorSnapshot` / `NodeState` (no receive rewrite)
