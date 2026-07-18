@@ -46,6 +46,10 @@ public final class MetricsSampler {
                 pipeline.sensorTemp(),
                 pipeline.sensorOther(),
                 pipeline.tcpResyncBytes(),
+                pipeline.framesLastHop(),
+                pipeline.hopIdx0(),
+                pipeline.hopIdx1(),
+                pipeline.hopIdx2Plus(),
                 fps,
                 bps,
                 now);

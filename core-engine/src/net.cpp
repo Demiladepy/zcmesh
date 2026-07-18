@@ -106,6 +106,48 @@ void UdpSocket::close() {
     fd_ = kInvalidSocket;
 }
 
+bool UdpSocket::bind(const Endpoint& ep) {
+    if (fd_ == kInvalidSocket) {
+        return false;
+    }
+    sockaddr_in addr{};
+    if (!fill_sockaddr(ep, addr)) {
+        return false;
+    }
+    int on = 1;
+#if defined(_WIN32)
+    setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&on), sizeof(on));
+#else
+    setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+#endif
+    return ::bind(fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
+}
+
+int UdpSocket::recv_nb(void* data, std::size_t len) {
+    if (fd_ == kInvalidSocket || !data || len == 0) {
+        return -1;
+    }
+    const int n = ::recvfrom(fd_, static_cast<char*>(data), static_cast<int>(len), 0,
+                             nullptr, nullptr);
+#if defined(_WIN32)
+    if (n == SOCKET_ERROR) {
+        const int err = WSAGetLastError();
+        if (err == WSAEWOULDBLOCK) {
+            return 0;
+        }
+        return -1;
+    }
+#else
+    if (n < 0) {
+        if (errno == EWOULDBLOCK || errno == EAGAIN) {
+            return 0;
+        }
+        return -1;
+    }
+#endif
+    return n;
+}
+
 bool UdpSocket::send_to(const Endpoint& ep, const void* data, std::size_t len) {
     if (fd_ == kInvalidSocket || !data || len == 0) {
         return false;

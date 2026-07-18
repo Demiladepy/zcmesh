@@ -20,6 +20,10 @@ public final class OperatorSnapshot {
     public final long sensorTemp;
     public final long sensorOther;
     public final long tcpResyncBytes;
+    public final long framesLastHop;
+    public final long hopIdx0;
+    public final long hopIdx1;
+    public final long hopIdx2Plus;
     public final double framesPerSec;
     public final double bytesPerSec;
     public final long capturedAtNs;
@@ -28,7 +32,7 @@ public final class OperatorSnapshot {
             long framesOk, long crcFail, long gaps, long dups, long nodes, long bytesIn,
             long queued, long lastSeq, long iaEwmaNs, long ringDrops,
             long sensorVoltage, long sensorCurrent, long sensorTemp, long sensorOther,
-            long tcpResyncBytes,
+            long tcpResyncBytes, long framesLastHop, long hopIdx0, long hopIdx1, long hopIdx2Plus,
             double framesPerSec, double bytesPerSec, long capturedAtNs) {
         this.framesOk = framesOk;
         this.crcFail = crcFail;
@@ -45,9 +49,17 @@ public final class OperatorSnapshot {
         this.sensorTemp = sensorTemp;
         this.sensorOther = sensorOther;
         this.tcpResyncBytes = tcpResyncBytes;
+        this.framesLastHop = framesLastHop;
+        this.hopIdx0 = hopIdx0;
+        this.hopIdx1 = hopIdx1;
+        this.hopIdx2Plus = hopIdx2Plus;
         this.framesPerSec = framesPerSec;
         this.bytesPerSec = bytesPerSec;
         this.capturedAtNs = capturedAtNs;
+    }
+
+    public double lastHopPct() {
+        return framesOk > 0 ? (100.0 * framesLastHop / framesOk) : 0.0;
     }
 
     public String toPlainText() {
@@ -67,6 +79,11 @@ public final class OperatorSnapshot {
                 + "sensor_temp=" + sensorTemp + "\n"
                 + "sensor_other=" + sensorOther + "\n"
                 + "tcp_resync_bytes=" + tcpResyncBytes + "\n"
+                + "last_hop=" + framesLastHop + "\n"
+                + "last_hop_pct=" + (long) lastHopPct() + "\n"
+                + "hop_idx_0=" + hopIdx0 + "\n"
+                + "hop_idx_1=" + hopIdx1 + "\n"
+                + "hop_idx_2p=" + hopIdx2Plus + "\n"
                 + "frames_s=" + (long) framesPerSec + "\n"
                 + "bytes_s=" + (long) bytesPerSec + "\n";
     }

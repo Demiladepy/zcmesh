@@ -27,6 +27,10 @@ public final class TelemetryPipeline {
     private final LongAdder sensorTemp = new LongAdder();
     private final LongAdder sensorOther = new LongAdder();
     private final LongAdder tcpResync = new LongAdder();
+    private final LongAdder framesLastHop = new LongAdder();
+    private final LongAdder hopIdx0 = new LongAdder();
+    private final LongAdder hopIdx1 = new LongAdder();
+    private final LongAdder hopIdx2Plus = new LongAdder();
 
     public TelemetryPipeline(int ringCapacityPow2) {
         this.ring = new FrameRing(ringCapacityPow2);
@@ -41,12 +45,27 @@ public final class TelemetryPipeline {
         trackGaps(frame);
         trackInterArrival();
         trackSensor(frame.sensorType);
+        trackHop(frame);
         framesOk.increment();
         lastSeq.set(frame.seq);
         long now = System.nanoTime();
         latestByNode.put(frame.nodeId, new NodeState(
                 frame.nodeId, frame.seq, frame.sensorType, frame.rawValue, frame.timestampLo, now));
         ring.offer(frame);
+    }
+
+    private void trackHop(WireFrame frame) {
+        if ((frame.flags & WireFrame.FLAG_LAST_HOP) != 0) {
+            framesLastHop.increment();
+        }
+        int hi = frame.reserved & 0xFF;
+        if (hi == 0) {
+            hopIdx0.increment();
+        } else if (hi == 1) {
+            hopIdx1.increment();
+        } else {
+            hopIdx2Plus.increment();
+        }
     }
 
     /** Bytes skipped while hunting for 0x5A43 after a TCP framing desync. */
@@ -198,6 +217,22 @@ public final class TelemetryPipeline {
 
     public long tcpResyncBytes() {
         return tcpResync.sum();
+    }
+
+    public long framesLastHop() {
+        return framesLastHop.sum();
+    }
+
+    public long hopIdx0() {
+        return hopIdx0.sum();
+    }
+
+    public long hopIdx1() {
+        return hopIdx1.sum();
+    }
+
+    public long hopIdx2Plus() {
+        return hopIdx2Plus.sum();
     }
 
     public int queued() {

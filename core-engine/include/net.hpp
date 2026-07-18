@@ -36,7 +36,10 @@ public:
 
     bool open();
     void close();
+    bool bind(const Endpoint& ep);
     bool send_to(const Endpoint& ep, const void* data, std::size_t len);
+    /* Non-blocking recv; returns bytes, 0 = would block / empty, -1 = error. */
+    int recv_nb(void* data, std::size_t len);
     socket_t native() const noexcept { return fd_; }
 
 private:

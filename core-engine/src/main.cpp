@@ -1,6 +1,7 @@
 #include "arena.hpp"
 #include "batch.hpp"
 #include "frame.hpp"
+#include "mesh_control.h"
 #include "net.hpp"
 #include "router.hpp"
 
@@ -48,11 +49,39 @@ void usage(const char* argv0) {
     std::fprintf(stderr,
                  "Usage: %s [--operator host:port] [--node-id N] [--rate Hz] [--batch N]\n"
                  "          [--transport auto|tcp|udp|mesh] [--duration SEC] [--drop-pct N]\n"
-                 "          [--print-stats-sec N] [--hop host:port]... [--hop-skip-file path]\n"
-                 "          [--file path] [--stdin]\n"
+                 "          [--print-stats-sec N] [--hop host:port]... [--control host:port]\n"
+                 "          [--hop-skip-file path] [--file path] [--stdin]\n"
                  "  Adaptive TCP batching + exponential reconnect. Repeat --hop to set mesh path.\n"
-                 "  --hop-skip-file: if present, first byte/int is hop skip bitmask (soak control).\n",
+                 "  --control: UDP mesh control (SET_SKIP/CLEAR). --hop-skip-file kept for soaks.\n",
                  argv0);
+}
+
+void poll_control(zcmesh::UdpSocket& ctrl, zcmesh::MeshRouter& router) {
+    uint8_t buf[64];
+    for (;;) {
+        const int n = ctrl.recv_nb(buf, sizeof(buf));
+        if (n == 0) {
+            return;
+        }
+        if (n < 0) {
+            return;
+        }
+        if (n < static_cast<int>(ZCMESH_CTRL_SIZE)) {
+            continue;
+        }
+        zcmesh_ctrl_msg msg{};
+        std::memcpy(&msg, buf, ZCMESH_CTRL_SIZE);
+        if (msg.magic != ZCMESH_CTRL_MAGIC || msg.version != ZCMESH_CTRL_VERSION) {
+            continue;
+        }
+        if (msg.opcode == ZCMESH_CTRL_OP_SET_SKIP) {
+            router.set_hop_skip_mask(msg.node_id, msg.mask);
+            std::fprintf(stderr, "ctrl SET_SKIP node=%u mask=%u\n", msg.node_id, msg.mask);
+        } else if (msg.opcode == ZCMESH_CTRL_OP_CLEAR) {
+            router.set_hop_skip_mask(msg.node_id, 0);
+            std::fprintf(stderr, "ctrl CLEAR node=%u\n", msg.node_id);
+        }
+    }
 }
 
 bool flush_udp_direct(zcmesh::UdpSocket& udp, const zcmesh::Endpoint& ep, zcmesh::FrameBatch& batch) {
@@ -177,6 +206,7 @@ int main(int argc, char** argv) {
     zcmesh::Endpoint hop_override[3]{};
     uint8_t hop_override_count = 0;
     const char* hop_skip_file = nullptr;
+    const char* control_ep = nullptr;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--operator") == 0 && i + 1 < argc) {
@@ -220,6 +250,8 @@ int main(int argc, char** argv) {
                 return 1;
             }
             ++hop_override_count;
+        } else if (std::strcmp(argv[i], "--control") == 0 && i + 1 < argc) {
+            control_ep = argv[++i];
         } else if (std::strcmp(argv[i], "--hop-skip-file") == 0 && i + 1 < argc) {
             hop_skip_file = argv[++i];
         } else if (std::strcmp(argv[i], "--file") == 0 && i + 1 < argc) {
@@ -276,6 +308,19 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    zcmesh::UdpSocket ctrl;
+    bool ctrl_on = false;
+    if (control_ep) {
+        zcmesh::Endpoint cep{};
+        if (!zcmesh::parse_endpoint(control_ep, cep) || !ctrl.open() || !ctrl.bind(cep)) {
+            std::fprintf(stderr, "control bind failed %s\n", control_ep);
+            zcmesh::net_shutdown();
+            return 1;
+        }
+        ctrl_on = true;
+        std::fprintf(stderr, "mesh control listening %s:%u\n", cep.host, cep.port);
+    }
+
     ReconnectGate gate;
     zcmesh::TcpClient tcp;
     if (transport != Transport::Udp && transport != Transport::Mesh) {
@@ -322,6 +367,9 @@ int main(int argc, char** argv) {
                  node_id, rate_hz, batch_size, tname, drop_pct, ZCMESH_WIRE_FRAME_SIZE);
 
     while (true) {
+        if (ctrl_on) {
+            poll_control(ctrl, router);
+        }
         if (hop_skip_file) {
             uint8_t mask = 0;
             FILE* sf = std::fopen(hop_skip_file, "rb");

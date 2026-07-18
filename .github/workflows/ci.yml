@@ -23,6 +23,9 @@ jobs:
       - name: Bench
         run: .\build\zcmesh_bench.exe 200000
         working-directory: core-engine
+      - name: Soak loss (inspect gaps)
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ..\scripts\soak-loss.ps1 -Seconds 4 -Rate 400 -LossPct 15 -ExpectGapsMin 3
+        working-directory: core-engine
 
   core-linux:
     runs-on: ubuntu-latest

@@ -39,7 +39,7 @@ cd ..\operator-node
 .\gradlew.bat classes golden
 ```
 
-Binaries: `zcmesh_edge`, `zcmesh_bench`, `zcmesh_hop`, `zcmesh_capture`, `zcmesh_replay`, `zcmesh_inspect`, tests.
+Binaries: `zcmesh_edge`, `zcmesh_bench`, `zcmesh_hop`, `zcmesh_ctl`, `zcmesh_capture`, `zcmesh_replay`, `zcmesh_inspect`, tests.
 
 ## Run
 
@@ -88,9 +88,10 @@ Typical: **24 B** vs ~**67 B** JSON line, **~93%** encode CPU reduction.
 - Hop stamps `reserved` (hop index) and `--final` sets `LAST_HOP` + CRC rewrite
 - `soak-failover.ps1`: UDP-only operator forces `auto` → mesh; asserts `mesh_failover>0`
 - `soak-loss.ps1`: hop `--loss-pct` → capture → `inspect --expect-gaps-min`
-- `soak-preferred-hop.ps1`: `--hop-skip-file` demotes hop0 then clears for remotion
-- Connected UDP send (real nets) + hop skip mask (localhost soaks)
-- Live `dups=` on stats (parity with offline inspect)
+- `soak-preferred-hop.ps1`: `zcmesh_ctl` SET_SKIP/CLEAR via edge `--control`
+- Live mesh control: 8-byte UDP `mesh_control.h` + `zcmesh_ctl`
+- Live `dups=` / `last_hop_pct` / hop_idx on operator stats
+- CI gates `soak-loss.ps1` on Windows after core build
 - Inspect: per-node seq gaps, hop index / LAST_HOP, SUMMARY line
 - Replay: `--pace capture` (default) follows `timestamp_lo` deltas; `--rate` for fixed Hz
 - Operator: NIO TCP+UDP, SPSC ring, seq gaps, `.zcm` record (`record=path.zcm`)
