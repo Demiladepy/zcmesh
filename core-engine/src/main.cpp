@@ -22,6 +22,8 @@
 
 namespace {
 
+enum class Transport { Auto, Tcp, Udp };
+
 uint64_t monotonic_ns() {
 #if defined(_WIN32)
     static LARGE_INTEGER freq = {};
@@ -44,9 +46,23 @@ uint64_t monotonic_ns() {
 void usage(const char* argv0) {
     std::fprintf(stderr,
                  "Usage: %s [--operator host:port] [--node-id N] [--rate Hz] [--batch N]\n"
-                 "          [--file path] [--stdin]\n"
-                 "  Arena-backed batch TCP uplink; UDP mesh fallback on TCP failure.\n",
+                 "          [--transport auto|tcp|udp] [--file path] [--stdin]\n"
+                 "  auto: batch TCP uplink, UDP mesh fallback; udp: mesh only; tcp: TCP only.\n",
                  argv0);
+}
+
+bool flush_udp(zcmesh::MeshRouter& router, zcmesh::UdpSocket& udp, uint16_t node_id,
+               zcmesh::FrameBatch& batch) {
+    const std::size_t n = batch.count();
+    const auto* frames = static_cast<const zcmesh_wire_frame*>(batch.data());
+    std::size_t forwarded = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        if (router.forward_udp(udp, node_id, &frames[i], ZCMESH_WIRE_FRAME_SIZE)) {
+            ++forwarded;
+        }
+    }
+    batch.clear();
+    return forwarded == n;
 }
 
 } // namespace
@@ -58,6 +74,7 @@ int main(int argc, char** argv) {
     std::size_t batch_size = 32;
     const char* file_path = nullptr;
     bool use_stdin = false;
+    Transport transport = Transport::Auto;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--operator") == 0 && i + 1 < argc) {
@@ -70,6 +87,18 @@ int main(int argc, char** argv) {
             batch_size = static_cast<std::size_t>(std::strtoull(argv[++i], nullptr, 10));
             if (batch_size == 0) {
                 batch_size = 1;
+            }
+        } else if (std::strcmp(argv[i], "--transport") == 0 && i + 1 < argc) {
+            ++i;
+            if (std::strcmp(argv[i], "tcp") == 0) {
+                transport = Transport::Tcp;
+            } else if (std::strcmp(argv[i], "udp") == 0) {
+                transport = Transport::Udp;
+            } else if (std::strcmp(argv[i], "auto") == 0) {
+                transport = Transport::Auto;
+            } else {
+                usage(argv[0]);
+                return 1;
             }
         } else if (std::strcmp(argv[i], "--file") == 0 && i + 1 < argc) {
             file_path = argv[++i];
@@ -89,7 +118,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    /* Single arena for router + batch slab. Never reset on hot path. */
     constexpr std::size_t kArenaBytes = 4u * 1024u * 1024u;
     zcmesh::Arena arena(kArenaBytes);
 
@@ -118,11 +146,16 @@ int main(int argc, char** argv) {
     }
 
     zcmesh::TcpClient tcp;
-    if (!tcp.connect(op)) {
-        std::fprintf(stderr, "tcp connect to %s:%u failed (will retry via UDP mesh)\n",
-                     op.host, op.port);
-    } else {
-        std::fprintf(stderr, "tcp uplink connected %s:%u\n", op.host, op.port);
+    if (transport != Transport::Udp) {
+        if (!tcp.connect(op)) {
+            std::fprintf(stderr, "tcp connect to %s:%u failed\n", op.host, op.port);
+            if (transport == Transport::Tcp) {
+                zcmesh::net_shutdown();
+                return 1;
+            }
+        } else {
+            std::fprintf(stderr, "tcp uplink connected %s:%u (TCP_NODELAY)\n", op.host, op.port);
+        }
     }
 
     std::ifstream file_in;
@@ -141,10 +174,11 @@ int main(int argc, char** argv) {
     uint64_t sent_fail = 0;
     auto next = std::chrono::steady_clock::now();
 
+    const char* tname = transport == Transport::Tcp ? "tcp"
+                      : transport == Transport::Udp ? "udp" : "auto";
     std::fprintf(stderr,
-                 "zcmesh_edge node=%u rate=%.1fHz batch=%zu frame=%uB arena=%zuB used=%zuB\n",
-                 node_id, rate_hz, batch_size, ZCMESH_WIRE_FRAME_SIZE,
-                 arena.capacity(), arena.used());
+                 "zcmesh_edge node=%u rate=%.1fHz batch=%zu transport=%s frame=%uB used=%zuB\n",
+                 node_id, rate_hz, batch_size, tname, ZCMESH_WIRE_FRAME_SIZE, arena.used());
 
     while (true) {
         int32_t raw = 0;
@@ -177,20 +211,24 @@ int main(int argc, char** argv) {
         if (batch.full()) {
             const std::size_t n = batch.count();
             bool ok = false;
-            if (tcp.connected() && batch.flush_tcp(tcp)) {
-                ok = true;
-            } else {
-                const auto* frames = static_cast<const zcmesh_wire_frame*>(batch.data());
-                std::size_t forwarded = 0;
-                for (std::size_t i = 0; i < n; ++i) {
-                    if (router.forward_udp(udp, node_id, &frames[i], ZCMESH_WIRE_FRAME_SIZE)) {
-                        ++forwarded;
+            if (transport == Transport::Udp) {
+                ok = flush_udp(router, udp, node_id, batch);
+            } else if (transport == Transport::Tcp) {
+                ok = tcp.connected() && batch.flush_tcp(tcp);
+                if (!ok) {
+                    batch.clear();
+                    if (!tcp.connected()) {
+                        tcp.connect(op);
                     }
                 }
-                batch.clear();
-                ok = forwarded == n;
-                if (!tcp.connected()) {
-                    tcp.connect(op);
+            } else {
+                if (tcp.connected() && batch.flush_tcp(tcp)) {
+                    ok = true;
+                } else {
+                    ok = flush_udp(router, udp, node_id, batch);
+                    if (!tcp.connected()) {
+                        tcp.connect(op);
+                    }
                 }
             }
             if (ok) {
@@ -212,12 +250,10 @@ int main(int argc, char** argv) {
     }
 
     if (!batch.empty()) {
-        if (!(tcp.connected() && batch.flush_tcp(tcp))) {
-            const auto* frames = static_cast<const zcmesh_wire_frame*>(batch.data());
-            for (std::size_t i = 0; i < batch.count(); ++i) {
-                router.forward_udp(udp, node_id, &frames[i], ZCMESH_WIRE_FRAME_SIZE);
-            }
-            batch.clear();
+        if (transport == Transport::Udp) {
+            flush_udp(router, udp, node_id, batch);
+        } else if (!(tcp.connected() && batch.flush_tcp(tcp))) {
+            flush_udp(router, udp, node_id, batch);
         }
     }
 

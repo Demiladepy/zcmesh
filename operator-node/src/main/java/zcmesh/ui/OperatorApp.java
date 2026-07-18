@@ -110,9 +110,10 @@ public final class OperatorApp extends Application {
                 batch++;
             }
             Platform.runLater(() -> statsLabel.setText(String.format(
-                    "ok: %d   crc_fail: %d   gaps: %d   last_seq: %d   queued: %d",
+                    "ok: %d   crc_fail: %d   gaps: %d   last_seq: %d   queued: %d   ia_ewma_us: %.0f",
                     pipeline.framesOk(), pipeline.framesCrcFail(), pipeline.seqGaps(),
-                    pipeline.lastSeq(), pipeline.queued())));
+                    pipeline.lastSeq(), pipeline.queued(),
+                    pipeline.interArrivalEwmaNs() / 1000.0)));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

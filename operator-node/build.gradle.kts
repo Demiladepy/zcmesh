@@ -37,6 +37,13 @@ tasks.register<JavaExec>("smoke") {
     )
 }
 
+tasks.register<JavaExec>("golden") {
+    group = "verification"
+    description = "Cross-language wire CRC golden vector"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("zcmesh.wire.WireFrameGolden")
+}
+
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
 }

@@ -3,11 +3,14 @@
 #include <cstdio>
 #include <cstring>
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <unistd.h>
 #endif
 
@@ -122,6 +125,18 @@ TcpClient::~TcpClient() {
     close();
 }
 
+void TcpClient::apply_socket_opts() {
+    int one = 1;
+    int snd = 256 * 1024;
+#if defined(_WIN32)
+    setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&one), sizeof(one));
+    setsockopt(fd_, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<const char*>(&snd), sizeof(snd));
+#else
+    setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    setsockopt(fd_, SOL_SOCKET, SO_SNDBUF, &snd, sizeof(snd));
+#endif
+}
+
 bool TcpClient::connect(const Endpoint& ep) {
     close();
     fd_ = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -132,6 +147,7 @@ bool TcpClient::connect(const Endpoint& ep) {
         close();
         return false;
     }
+    apply_socket_opts();
     sockaddr_in addr{};
     if (!fill_sockaddr(ep, addr)) {
         close();

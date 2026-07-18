@@ -59,6 +59,8 @@ public:
     socket_t native() const noexcept { return fd_; }
 
 private:
+    void apply_socket_opts();
+
     socket_t fd_;
     bool connected_;
 };

@@ -102,4 +102,21 @@ Example (local): `24 B` vs `~67 B` payload, **~94%** encode CPU reduction.
 
 ```powershell
 .\zcmesh_hop.exe --listen 127.0.0.1:9901 --forward 127.0.0.1:9900
+# optional loss injection for gap demo:
+.\zcmesh_hop.exe --listen 127.0.0.1:9901 --forward 127.0.0.1:9900 --loss-pct 5
 ```
+
+Force edge onto UDP mesh (skip TCP):
+
+```powershell
+.\zcmesh_edge.exe --transport udp --operator 127.0.0.1:9900 --rate 500 --batch 8
+```
+
+One-shot local mesh demo:
+
+```powershell
+.\scripts\demo.ps1
+.\scripts\demo.ps1 -LossPct 5
+```
+
+Cross-language CRC golden: `ctest` / `zcmesh_test_frame` and `.\gradlew.bat golden`.
