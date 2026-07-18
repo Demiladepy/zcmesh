@@ -132,8 +132,10 @@ public final class OperatorApp extends Application {
         Platform.runLater(() -> {
             rateLabel.setText(String.format("frames/s: %.0f   bytes/s: %.0f", s.framesPerSec, s.bytesPerSec));
             statsLabel.setText(String.format(
-                    "ok: %d   crc_fail: %d   gaps: %d   drops: %d   last_seq: %d   queued: %d   ia_ewma_us: %.0f",
-                    s.framesOk, s.crcFail, s.gaps, s.ringDrops, s.lastSeq, s.queued, s.iaEwmaNs / 1000.0));
+                    "ok: %d  crc: %d  gaps: %d  drops: %d  V/I/T: %d/%d/%d  seq: %d  q: %d",
+                    s.framesOk, s.crcFail, s.gaps, s.ringDrops,
+                    s.sensorVoltage, s.sensorCurrent, s.sensorTemp,
+                    s.lastSeq, s.queued));
         });
     }
 

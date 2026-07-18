@@ -55,7 +55,7 @@ cd ..\core-engine\build
 
 Headless smoke: `.\gradlew.bat smoke` then start edge. Stats scrape (while operator up): TCP connect to `127.0.0.1:9909`.
 
-Transport: `auto` (TCP + mesh fallback), `tcp`, `udp` (direct), `mesh` (hops `9901→9902→operator`). Options: `--duration SEC`, `--drop-pct N`, `--batch N`.
+Transport: `auto` (TCP + mesh fallback), `tcp`, `udp` (direct), `mesh` (hops). Options: `--duration SEC`, `--drop-pct N`, `--batch N`, `--hop host:port` (repeatable, max 3), `--print-stats-sec N`.
 
 ## Scripts
 

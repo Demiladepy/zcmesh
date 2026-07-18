@@ -21,6 +21,10 @@ public final class TelemetryPipeline {
     private final AtomicLong[] lastSeqByNode = new AtomicLong[65536];
     private final AtomicLong lastOfferNs = new AtomicLong(0);
     private final AtomicLong interArrivalEwmaNs = new AtomicLong(0);
+    private final LongAdder sensorVoltage = new LongAdder();
+    private final LongAdder sensorCurrent = new LongAdder();
+    private final LongAdder sensorTemp = new LongAdder();
+    private final LongAdder sensorOther = new LongAdder();
 
     public TelemetryPipeline(int ringCapacityPow2) {
         this.ring = new FrameRing(ringCapacityPow2);
@@ -34,12 +38,30 @@ public final class TelemetryPipeline {
         }
         trackGaps(frame);
         trackInterArrival();
+        trackSensor(frame.sensorType);
         framesOk.increment();
         lastSeq.set(frame.seq);
         long now = System.nanoTime();
         latestByNode.put(frame.nodeId, new NodeState(
                 frame.nodeId, frame.seq, frame.sensorType, frame.rawValue, frame.timestampLo, now));
         ring.offer(frame);
+    }
+
+    private void trackSensor(int type) {
+        switch (type) {
+            case 0:
+                sensorVoltage.increment();
+                break;
+            case 1:
+                sensorCurrent.increment();
+                break;
+            case 2:
+                sensorTemp.increment();
+                break;
+            default:
+                sensorOther.increment();
+                break;
+        }
     }
 
     private void trackInterArrival() {
@@ -137,6 +159,22 @@ public final class TelemetryPipeline {
 
     public long ringDrops() {
         return ring.drops();
+    }
+
+    public long sensorVoltage() {
+        return sensorVoltage.sum();
+    }
+
+    public long sensorCurrent() {
+        return sensorCurrent.sum();
+    }
+
+    public long sensorTemp() {
+        return sensorTemp.sum();
+    }
+
+    public long sensorOther() {
+        return sensorOther.sum();
     }
 
     public int queued() {

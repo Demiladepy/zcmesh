@@ -40,6 +40,10 @@ public final class MetricsSampler {
                 pipeline.lastSeq(),
                 pipeline.interArrivalEwmaNs(),
                 pipeline.ringDrops(),
+                pipeline.sensorVoltage(),
+                pipeline.sensorCurrent(),
+                pipeline.sensorTemp(),
+                pipeline.sensorOther(),
                 fps,
                 bps,
                 now);

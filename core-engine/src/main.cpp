@@ -48,8 +48,8 @@ void usage(const char* argv0) {
     std::fprintf(stderr,
                  "Usage: %s [--operator host:port] [--node-id N] [--rate Hz] [--batch N]\n"
                  "          [--transport auto|tcp|udp|mesh] [--duration SEC] [--drop-pct N]\n"
-                 "          [--print-stats-sec N] [--file path] [--stdin]\n"
-                 "  Adaptive TCP batching + exponential reconnect. --drop-pct injects local loss.\n",
+                 "          [--print-stats-sec N] [--hop host:port]... [--file path] [--stdin]\n"
+                 "  Adaptive TCP batching + exponential reconnect. Repeat --hop to set mesh path.\n",
                  argv0);
 }
 
@@ -154,6 +154,8 @@ int main(int argc, char** argv) {
     double duration_sec = 0.0;
     int drop_pct = 0;
     double print_stats_sec = 0.0;
+    zcmesh::Endpoint hop_override[3]{};
+    uint8_t hop_override_count = 0;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--operator") == 0 && i + 1 < argc) {
@@ -187,6 +189,16 @@ int main(int argc, char** argv) {
             drop_pct = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--print-stats-sec") == 0 && i + 1 < argc) {
             print_stats_sec = std::atof(argv[++i]);
+        } else if (std::strcmp(argv[i], "--hop") == 0 && i + 1 < argc) {
+            if (hop_override_count >= 3) {
+                std::fprintf(stderr, "at most 3 --hop entries\n");
+                return 1;
+            }
+            if (!zcmesh::parse_endpoint(argv[++i], hop_override[hop_override_count])) {
+                std::fprintf(stderr, "invalid --hop endpoint\n");
+                return 1;
+            }
+            ++hop_override_count;
         } else if (std::strcmp(argv[i], "--file") == 0 && i + 1 < argc) {
             file_path = argv[++i];
         } else if (std::strcmp(argv[i], "--stdin") == 0) {
@@ -216,12 +228,21 @@ int main(int argc, char** argv) {
     }
 
     zcmesh::Endpoint hops[3]{};
-    zcmesh::parse_endpoint("127.0.0.1:9901", hops[0]);
-    zcmesh::parse_endpoint("127.0.0.1:9902", hops[1]);
-    hops[2] = op;
+    uint8_t hop_count = 0;
+    if (hop_override_count > 0) {
+        for (uint8_t i = 0; i < hop_override_count; ++i) {
+            hops[i] = hop_override[i];
+        }
+        hop_count = hop_override_count;
+    } else {
+        zcmesh::parse_endpoint("127.0.0.1:9901", hops[0]);
+        zcmesh::parse_endpoint("127.0.0.1:9902", hops[1]);
+        hops[2] = op;
+        hop_count = 3;
+    }
 
     zcmesh::MeshRouter router(arena, 8);
-    router.add_route(node_id, hops, 3);
+    router.add_route(node_id, hops, hop_count);
 
     zcmesh::FrameBatch batch(arena, batch_size);
 
