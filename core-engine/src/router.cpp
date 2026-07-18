@@ -18,6 +18,7 @@ bool MeshRouter::add_route(uint16_t node_id, const Endpoint* hops, uint8_t hop_c
     e.node_id = node_id;
     e.hop_count = hop_count;
     e.active_hop = 0;
+    e.hop_skip_mask = 0;
     e.attempts = 0;
     e.fails = 0;
     e.last_probe_ns = 0;
@@ -48,6 +49,15 @@ const RouteEntry* MeshRouter::find(uint16_t node_id) const noexcept {
     return nullptr;
 }
 
+bool MeshRouter::set_hop_skip_mask(uint16_t node_id, uint8_t mask) noexcept {
+    RouteEntry* route = find(node_id);
+    if (!route) {
+        return false;
+    }
+    route->hop_skip_mask = mask;
+    return true;
+}
+
 bool MeshRouter::forward_udp(UdpSocket& udp, uint16_t node_id, const void* data, std::size_t len,
                              uint64_t now_ns) {
     RouteEntry* route = find(node_id);
@@ -56,7 +66,26 @@ bool MeshRouter::forward_udp(UdpSocket& udp, uint16_t node_id, const void* data,
     }
     ++route->attempts;
 
-    if (route->active_hop > 0 && route->hop_count > 0 &&
+    const auto hop_allowed = [&](uint8_t idx) -> bool {
+        return idx < route->hop_count && (route->hop_skip_mask & (1u << idx)) == 0;
+    };
+
+    if (!hop_allowed(route->active_hop)) {
+        bool moved = false;
+        for (uint8_t i = 0; i < route->hop_count; ++i) {
+            if (hop_allowed(i)) {
+                route->active_hop = i;
+                moved = true;
+                break;
+            }
+        }
+        if (!moved) {
+            ++route->fails;
+            return false;
+        }
+    }
+
+    if (route->active_hop > 0 && hop_allowed(0) &&
         (route->last_probe_ns == 0 || now_ns - route->last_probe_ns >= kPreferredProbeNs)) {
         route->last_probe_ns = now_ns;
         if (udp.send_to(route->hops[0], data, len)) {
@@ -68,6 +97,9 @@ bool MeshRouter::forward_udp(UdpSocket& udp, uint16_t node_id, const void* data,
 
     for (uint8_t attempt = 0; attempt < route->hop_count; ++attempt) {
         const uint8_t idx = static_cast<uint8_t>((route->active_hop + attempt) % route->hop_count);
+        if (!hop_allowed(idx)) {
+            continue;
+        }
         if (udp.send_to(route->hops[idx], data, len)) {
             route->active_hop = idx;
             ++route->hop_ok[idx];
@@ -76,7 +108,14 @@ bool MeshRouter::forward_udp(UdpSocket& udp, uint16_t node_id, const void* data,
     }
     ++route->fails;
     if (route->hop_count > 0) {
-        route->active_hop = static_cast<uint8_t>((route->active_hop + 1) % route->hop_count);
+        for (uint8_t step = 1; step <= route->hop_count; ++step) {
+            const uint8_t idx =
+                static_cast<uint8_t>((route->active_hop + step) % route->hop_count);
+            if (hop_allowed(idx)) {
+                route->active_hop = idx;
+                break;
+            }
+        }
     }
     return false;
 }

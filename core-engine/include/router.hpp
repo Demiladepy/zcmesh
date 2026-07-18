@@ -14,6 +14,7 @@ struct RouteEntry {
     Endpoint hops[kMaxFallbacks];
     uint8_t hop_count;
     uint8_t active_hop; /* sticky; preferred hop 0 is probed periodically */
+    uint8_t hop_skip_mask; /* bit i => skip hops[i] (soak / operator control) */
     uint64_t attempts;
     uint64_t fails;
     uint64_t hop_ok[kMaxFallbacks];
@@ -29,6 +30,9 @@ public:
     bool add_route(uint16_t node_id, const Endpoint* hops, uint8_t hop_count);
     RouteEntry* find(uint16_t node_id) noexcept;
     const RouteEntry* find(uint16_t node_id) const noexcept;
+
+    /* Bit i set => never send to hops[i]. Used by soak file / future control plane. */
+    bool set_hop_skip_mask(uint16_t node_id, uint8_t mask) noexcept;
 
     /* Try UDP to active hop; on failure advance fallback. Probe hop 0 when demoted. */
     bool forward_udp(UdpSocket& udp, uint16_t node_id, const void* data, std::size_t len,

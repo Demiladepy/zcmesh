@@ -48,8 +48,10 @@ void usage(const char* argv0) {
     std::fprintf(stderr,
                  "Usage: %s [--operator host:port] [--node-id N] [--rate Hz] [--batch N]\n"
                  "          [--transport auto|tcp|udp|mesh] [--duration SEC] [--drop-pct N]\n"
-                 "          [--print-stats-sec N] [--hop host:port]... [--file path] [--stdin]\n"
-                 "  Adaptive TCP batching + exponential reconnect. Repeat --hop to set mesh path.\n",
+                 "          [--print-stats-sec N] [--hop host:port]... [--hop-skip-file path]\n"
+                 "          [--file path] [--stdin]\n"
+                 "  Adaptive TCP batching + exponential reconnect. Repeat --hop to set mesh path.\n"
+                 "  --hop-skip-file: if present, first byte/int is hop skip bitmask (soak control).\n",
                  argv0);
 }
 
@@ -174,6 +176,7 @@ int main(int argc, char** argv) {
     double print_stats_sec = 0.0;
     zcmesh::Endpoint hop_override[3]{};
     uint8_t hop_override_count = 0;
+    const char* hop_skip_file = nullptr;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--operator") == 0 && i + 1 < argc) {
@@ -217,6 +220,8 @@ int main(int argc, char** argv) {
                 return 1;
             }
             ++hop_override_count;
+        } else if (std::strcmp(argv[i], "--hop-skip-file") == 0 && i + 1 < argc) {
+            hop_skip_file = argv[++i];
         } else if (std::strcmp(argv[i], "--file") == 0 && i + 1 < argc) {
             file_path = argv[++i];
         } else if (std::strcmp(argv[i], "--stdin") == 0) {
@@ -317,6 +322,19 @@ int main(int argc, char** argv) {
                  node_id, rate_hz, batch_size, tname, drop_pct, ZCMESH_WIRE_FRAME_SIZE);
 
     while (true) {
+        if (hop_skip_file) {
+            uint8_t mask = 0;
+            FILE* sf = std::fopen(hop_skip_file, "rb");
+            if (sf) {
+                int v = 0;
+                if (std::fscanf(sf, "%d", &v) == 1 && v > 0) {
+                    mask = static_cast<uint8_t>(v & 0xFF);
+                }
+                std::fclose(sf);
+            }
+            router.set_hop_skip_mask(node_id, mask);
+        }
+
         if (timed) {
             const double elapsed = std::chrono::duration<double>(
                 std::chrono::steady_clock::now() - start).count();

@@ -8,6 +8,7 @@ public final class OperatorSnapshot {
     public final long framesOk;
     public final long crcFail;
     public final long gaps;
+    public final long dups;
     public final long nodes;
     public final long bytesIn;
     public final long queued;
@@ -24,7 +25,7 @@ public final class OperatorSnapshot {
     public final long capturedAtNs;
 
     public OperatorSnapshot(
-            long framesOk, long crcFail, long gaps, long nodes, long bytesIn,
+            long framesOk, long crcFail, long gaps, long dups, long nodes, long bytesIn,
             long queued, long lastSeq, long iaEwmaNs, long ringDrops,
             long sensorVoltage, long sensorCurrent, long sensorTemp, long sensorOther,
             long tcpResyncBytes,
@@ -32,6 +33,7 @@ public final class OperatorSnapshot {
         this.framesOk = framesOk;
         this.crcFail = crcFail;
         this.gaps = gaps;
+        this.dups = dups;
         this.nodes = nodes;
         this.bytesIn = bytesIn;
         this.queued = queued;
@@ -53,6 +55,7 @@ public final class OperatorSnapshot {
                 + "frames_ok=" + framesOk + "\n"
                 + "crc_fail=" + crcFail + "\n"
                 + "gaps=" + gaps + "\n"
+                + "dups=" + dups + "\n"
                 + "nodes=" + nodes + "\n"
                 + "bytes=" + bytesIn + "\n"
                 + "queued=" + queued + "\n"

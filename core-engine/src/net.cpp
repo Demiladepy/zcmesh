@@ -114,10 +114,48 @@ bool UdpSocket::send_to(const Endpoint& ep, const void* data, std::size_t len) {
     if (!fill_sockaddr(ep, addr)) {
         return false;
     }
-    const int n = ::sendto(fd_, static_cast<const char*>(data),
-                           static_cast<int>(len), 0,
-                           reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+    /*
+     * Connect before send so ICMP port-unreachable / ECONNREFUSED surfaces on the
+     * next hop attempt. Plain sendto to a dead UDP port often "succeeds", which
+     * prevents mesh demotion and preferred-path recovery.
+     */
+    if (::connect(fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+#if defined(_WIN32)
+        const int cerr = WSAGetLastError();
+        if (cerr != WSAEISCONN) {
+            const int n = ::sendto(fd_, static_cast<const char*>(data),
+                                   static_cast<int>(len), 0,
+                                   reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+            return n == static_cast<int>(len);
+        }
+#else
+        if (errno != EISCONN) {
+            const int n = ::sendto(fd_, static_cast<const char*>(data),
+                                   static_cast<int>(len), 0,
+                                   reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+            return n == static_cast<int>(len);
+        }
+#endif
+    }
+#if defined(_WIN32)
+    const int n = ::send(fd_, static_cast<const char*>(data), static_cast<int>(len), 0);
+    sockaddr_in clear{};
+    clear.sin_family = AF_UNSPEC;
+    ::connect(fd_, reinterpret_cast<sockaddr*>(&clear), sizeof(clear));
+    if (n == SOCKET_ERROR) {
+        return false;
+    }
     return n == static_cast<int>(len);
+#else
+    const int n = ::send(fd_, data, len, 0);
+    sockaddr_in clear{};
+    clear.sin_family = AF_UNSPEC;
+    ::connect(fd_, reinterpret_cast<sockaddr*>(&clear), sizeof(clear));
+    if (n < 0) {
+        return false;
+    }
+    return static_cast<std::size_t>(n) == len;
+#endif
 }
 
 TcpClient::TcpClient() : fd_(kInvalidSocket), connected_(false) {}

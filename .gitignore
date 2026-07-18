@@ -29,6 +29,8 @@ replay-*.txt
 soak-*.txt
 failover-*.txt
 loss-*.txt
+prefhop-*.txt
+zcmesh.hopskip
 rt-*.txt
 .DS_Store
 Thumbs.db

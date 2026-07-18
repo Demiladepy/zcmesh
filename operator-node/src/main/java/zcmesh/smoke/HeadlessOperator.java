@@ -33,8 +33,8 @@ public final class HeadlessOperator {
                 if (ok >= minFrames) {
                     OperatorSnapshot s = runtime.sampler().snapshot();
                     System.out.printf(
-                            "SMOKE_OK frames=%d crc_fail=%d gaps=%d nodes=%d last_seq=%d bytes=%d drops=%d%n",
-                            s.framesOk, s.crcFail, s.gaps, s.nodes, s.lastSeq, s.bytesIn, s.ringDrops);
+                            "SMOKE_OK frames=%d crc_fail=%d gaps=%d dups=%d nodes=%d last_seq=%d bytes=%d drops=%d%n",
+                            s.framesOk, s.crcFail, s.gaps, s.dups, s.nodes, s.lastSeq, s.bytesIn, s.ringDrops);
                     if (runtime.recorder() != null) {
                         System.out.printf("RECORD frames=%d path=%s%n",
                                 runtime.recorder().frameCount(), recordPath);

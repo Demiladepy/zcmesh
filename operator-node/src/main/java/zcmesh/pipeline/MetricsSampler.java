@@ -34,6 +34,7 @@ public final class MetricsSampler {
                 ok,
                 pipeline.framesCrcFail(),
                 pipeline.seqGaps(),
+                pipeline.seqDups(),
                 pipeline.uniqueNodes(),
                 bytes,
                 pipeline.queued(),

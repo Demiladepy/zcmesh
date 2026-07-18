@@ -16,6 +16,7 @@ public final class TelemetryPipeline {
     private final LongAdder framesCrcFail = new LongAdder();
     private final LongAdder bytesIn = new LongAdder();
     private final LongAdder seqGaps = new LongAdder();
+    private final LongAdder seqDups = new LongAdder();
     private final LongAdder uniqueNodes = new LongAdder();
     private final AtomicLong lastSeq = new AtomicLong(-1);
     private final AtomicLong[] lastSeqByNode = new AtomicLong[65536];
@@ -108,6 +109,8 @@ public final class TelemetryPipeline {
         long expected = prev.get() + 1;
         if (frame.seq > expected) {
             seqGaps.add(frame.seq - expected);
+        } else if (frame.seq <= prev.get()) {
+            seqDups.increment();
         }
         prev.set(frame.seq);
     }
@@ -155,6 +158,10 @@ public final class TelemetryPipeline {
 
     public long seqGaps() {
         return seqGaps.sum();
+    }
+
+    public long seqDups() {
+        return seqDups.sum();
     }
 
     public long uniqueNodes() {

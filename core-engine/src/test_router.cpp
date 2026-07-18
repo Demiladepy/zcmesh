@@ -40,6 +40,11 @@ int main() {
     mut->last_probe_ns = 1;
     expect(mut->active_hop == 1, "demoted");
 
+    expect(router.set_hop_skip_mask(1, 0x1), "set skip hop0");
+    expect(mut->hop_skip_mask == 0x1, "mask set");
+    expect(router.set_hop_skip_mask(1, 0), "clear skip");
+    expect(mut->hop_skip_mask == 0, "mask cleared");
+
     /* Probe interval gate: immediately after last_probe, preferred probe is skipped
        until kPreferredProbeNs elapses — verified by reading constants / state. */
     expect(zcmesh::MeshRouter::kPreferredProbeNs == 500'000'000ull, "probe interval 500ms");
