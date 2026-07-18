@@ -53,9 +53,16 @@ tasks.register<JavaExec>("zcmRoundtrip") {
     mainClass.set("zcmesh.wire.ZcmRoundtrip")
 }
 
+tasks.register<JavaExec>("streamResync") {
+    group = "verification"
+    description = "TCP magic-scan resync self-check"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("zcmesh.net.StreamResyncCheck")
+}
+
 tasks.register("verifyAll") {
     group = "verification"
-    dependsOn("golden", "zcmRoundtrip")
+    dependsOn("golden", "zcmRoundtrip", "streamResync")
 }
 
 tasks.withType<JavaCompile> {

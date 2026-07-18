@@ -8,6 +8,7 @@ import java.net.InetSocketAddress;
 import java.net.StandardProtocolFamily;
 import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
@@ -18,6 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Dual-path receiver: non-blocking TCP stream + UDP datagrams on the same port.
+ * TCP path scans for wire magic after desync (partial-send / mid-frame reconnect).
  */
 public final class FrameReceiver implements Runnable {
     private final int port;
@@ -120,11 +122,50 @@ public final class FrameReceiver implements Runnable {
     private void decodeStream(ByteBuffer buf) {
         buf.flip();
         while (buf.remaining() >= WireFrame.SIZE) {
+            int pos = buf.position();
+            ByteBuffer peek = buf.duplicate().order(ByteOrder.LITTLE_ENDIAN);
+            int magic = Short.toUnsignedInt(peek.getShort(pos));
+            if (magic != WireFrame.MAGIC) {
+                int found = findMagic(buf, pos);
+                if (found < 0) {
+                    /* Keep at most SIZE-1 bytes for a straddling magic. */
+                    int keep = Math.min(buf.remaining(), WireFrame.SIZE - 1);
+                    buf.position(buf.limit() - keep);
+                    break;
+                }
+                pipeline.noteTcpResync(found - pos);
+                buf.position(found);
+                continue;
+            }
             ByteBuffer slice = buf.slice();
             slice.limit(WireFrame.SIZE);
-            pipeline.offer(WireFrame.decode(slice));
-            buf.position(buf.position() + WireFrame.SIZE);
+            WireFrame frame = WireFrame.decode(slice);
+            if (!frame.crcOk) {
+                /* Aligned magic but bad CRC: advance one byte and resync. */
+                pipeline.noteCrcFail();
+                pipeline.noteTcpResync(1);
+                buf.position(pos + 1);
+                continue;
+            }
+            pipeline.offer(frame);
+            buf.position(pos + WireFrame.SIZE);
         }
         buf.compact();
+    }
+
+    /**
+     * Scan for little-endian wire magic 0x5A43 starting at from (inclusive).
+     * @return absolute buffer index of magic, or -1 if not found with room for a frame
+     */
+    static int findMagic(ByteBuffer buf, int from) {
+        final byte lo = (byte) (WireFrame.MAGIC & 0xFF);
+        final byte hi = (byte) ((WireFrame.MAGIC >> 8) & 0xFF);
+        final int last = buf.limit() - WireFrame.SIZE;
+        for (int i = from; i <= last; ++i) {
+            if (buf.get(i) == lo && buf.get(i + 1) == hi) {
+                return i;
+            }
+        }
+        return -1;
     }
 }

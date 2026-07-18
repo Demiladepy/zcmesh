@@ -25,6 +25,7 @@ public final class TelemetryPipeline {
     private final LongAdder sensorCurrent = new LongAdder();
     private final LongAdder sensorTemp = new LongAdder();
     private final LongAdder sensorOther = new LongAdder();
+    private final LongAdder tcpResync = new LongAdder();
 
     public TelemetryPipeline(int ringCapacityPow2) {
         this.ring = new FrameRing(ringCapacityPow2);
@@ -45,6 +46,17 @@ public final class TelemetryPipeline {
         latestByNode.put(frame.nodeId, new NodeState(
                 frame.nodeId, frame.seq, frame.sensorType, frame.rawValue, frame.timestampLo, now));
         ring.offer(frame);
+    }
+
+    /** Bytes skipped while hunting for 0x5A43 after a TCP framing desync. */
+    public void noteTcpResync(int skippedBytes) {
+        if (skippedBytes > 0) {
+            tcpResync.add(skippedBytes);
+        }
+    }
+
+    public void noteCrcFail() {
+        framesCrcFail.increment();
     }
 
     private void trackSensor(int type) {
@@ -175,6 +187,10 @@ public final class TelemetryPipeline {
 
     public long sensorOther() {
         return sensorOther.sum();
+    }
+
+    public long tcpResyncBytes() {
+        return tcpResync.sum();
     }
 
     public int queued() {

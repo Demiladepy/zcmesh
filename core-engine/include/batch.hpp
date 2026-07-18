@@ -32,7 +32,19 @@ public:
     void adapt(bool fully_sent, uint64_t flush_ns) noexcept;
 
     bool has_partial_send() const noexcept { return send_offset_ > 0; }
+    std::size_t send_offset() const noexcept { return send_offset_; }
     const void* data() const noexcept { return frames_; }
+
+    /* Frames not fully drained by TCP (includes a mid-frame partial). */
+    std::size_t unsent_frame_index() const noexcept;
+    std::size_t unsent_count() const noexcept;
+    const zcmesh_wire_frame* unsent_frames() const noexcept;
+
+    /* Advance send cursor as if TCP accepted n bytes (tests / failover paths). */
+    void note_sent(std::size_t n) noexcept;
+
+    /* Drop fully-sent frames; keep partial + unsent at front with offset 0. */
+    void discard_fully_sent() noexcept;
 
 private:
     zcmesh_wire_frame* frames_;

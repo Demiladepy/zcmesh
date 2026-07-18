@@ -54,8 +54,9 @@ void usage(const char* argv0) {
 }
 
 bool flush_udp_direct(zcmesh::UdpSocket& udp, const zcmesh::Endpoint& ep, zcmesh::FrameBatch& batch) {
-    const std::size_t n = batch.count();
-    const auto* frames = static_cast<const zcmesh_wire_frame*>(batch.data());
+    batch.discard_fully_sent();
+    const std::size_t n = batch.unsent_count();
+    const auto* frames = batch.unsent_frames();
     std::size_t forwarded = 0;
     for (std::size_t i = 0; i < n; ++i) {
         if (udp.send_to(ep, &frames[i], ZCMESH_WIRE_FRAME_SIZE)) {
@@ -68,11 +69,13 @@ bool flush_udp_direct(zcmesh::UdpSocket& udp, const zcmesh::Endpoint& ep, zcmesh
 
 bool flush_udp_mesh(zcmesh::MeshRouter& router, zcmesh::UdpSocket& udp, uint16_t node_id,
                     zcmesh::FrameBatch& batch) {
-    const std::size_t n = batch.count();
-    const auto* frames = static_cast<const zcmesh_wire_frame*>(batch.data());
+    batch.discard_fully_sent();
+    const std::size_t n = batch.unsent_count();
+    const auto* frames = batch.unsent_frames();
+    const uint64_t now = monotonic_ns();
     std::size_t forwarded = 0;
     for (std::size_t i = 0; i < n; ++i) {
-        if (router.forward_udp(udp, node_id, &frames[i], ZCMESH_WIRE_FRAME_SIZE)) {
+        if (router.forward_udp(udp, node_id, &frames[i], ZCMESH_WIRE_FRAME_SIZE, now)) {
             ++forwarded;
         }
     }
@@ -135,7 +138,12 @@ bool flush_batch(Transport transport, zcmesh::FrameBatch& batch, zcmesh::TcpClie
             batch.adapt(true, monotonic_ns() - t0);
         } else {
             batch.adapt(false, monotonic_ns() - t0);
+            const bool had_partial = batch.has_partial_send();
+            /* Only mesh-forward frames TCP did not fully drain (avoids dup of sent prefix). */
             ok = flush_udp_mesh(router, udp, node_id, batch);
+            if (had_partial && tcp.connected()) {
+                tcp.close(); /* abandon mid-frame TCP stream; reconnect clean */
+            }
         }
     }
     return ok;
@@ -391,13 +399,17 @@ int main(int argc, char** argv) {
             const uint64_t delta = sent_ok - prev_ok;
             const double fps = static_cast<double>(delta) / print_stats_sec;
             const double bps = fps * static_cast<double>(ZCMESH_WIRE_FRAME_SIZE);
+            const zcmesh::RouteEntry* route = router.find(node_id);
             std::fprintf(stderr,
-                         "stats fps=%.0f bytes_s=%.0f ok=%llu fail=%llu drop=%llu flush_at=%zu\n",
+                         "stats fps=%.0f bytes_s=%.0f ok=%llu fail=%llu drop=%llu flush_at=%zu"
+                         " hop=%u route_fail=%llu\n",
                          fps, bps,
                          static_cast<unsigned long long>(sent_ok),
                          static_cast<unsigned long long>(sent_fail),
                          static_cast<unsigned long long>(dropped),
-                         batch.flush_at());
+                         batch.flush_at(),
+                         route ? static_cast<unsigned>(route->active_hop) : 0u,
+                         route ? static_cast<unsigned long long>(route->fails) : 0ull);
             prev_ok = sent_ok;
             next_stats += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                 std::chrono::duration<double>(print_stats_sec));

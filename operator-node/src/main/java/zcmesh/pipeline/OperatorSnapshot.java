@@ -18,6 +18,7 @@ public final class OperatorSnapshot {
     public final long sensorCurrent;
     public final long sensorTemp;
     public final long sensorOther;
+    public final long tcpResyncBytes;
     public final double framesPerSec;
     public final double bytesPerSec;
     public final long capturedAtNs;
@@ -26,6 +27,7 @@ public final class OperatorSnapshot {
             long framesOk, long crcFail, long gaps, long nodes, long bytesIn,
             long queued, long lastSeq, long iaEwmaNs, long ringDrops,
             long sensorVoltage, long sensorCurrent, long sensorTemp, long sensorOther,
+            long tcpResyncBytes,
             double framesPerSec, double bytesPerSec, long capturedAtNs) {
         this.framesOk = framesOk;
         this.crcFail = crcFail;
@@ -40,6 +42,7 @@ public final class OperatorSnapshot {
         this.sensorCurrent = sensorCurrent;
         this.sensorTemp = sensorTemp;
         this.sensorOther = sensorOther;
+        this.tcpResyncBytes = tcpResyncBytes;
         this.framesPerSec = framesPerSec;
         this.bytesPerSec = bytesPerSec;
         this.capturedAtNs = capturedAtNs;
@@ -60,6 +63,7 @@ public final class OperatorSnapshot {
                 + "sensor_current=" + sensorCurrent + "\n"
                 + "sensor_temp=" + sensorTemp + "\n"
                 + "sensor_other=" + sensorOther + "\n"
+                + "tcp_resync_bytes=" + tcpResyncBytes + "\n"
                 + "frames_s=" + (long) framesPerSec + "\n"
                 + "bytes_s=" + (long) bytesPerSec + "\n";
     }

@@ -43,7 +43,7 @@ public final class WireFrameGolden {
         System.out.println("WireFrameGolden: OK");
     }
 
-    private static byte[] hexToBytes(String hex) {
+    public static byte[] hexToBytes(String hex) {
         int n = hex.length();
         byte[] out = new byte[n / 2];
         for (int i = 0; i < n; i += 2) {

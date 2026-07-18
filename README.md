@@ -55,7 +55,7 @@ cd ..\core-engine\build
 
 Headless smoke: `.\gradlew.bat smoke` then start edge. Stats scrape (while operator up): TCP connect to `127.0.0.1:9909`.
 
-Transport: `auto` (TCP + mesh fallback), `tcp`, `udp` (direct), `mesh` (hops). Options: `--duration SEC`, `--drop-pct N`, `--batch N`, `--hop host:port` (repeatable, max 3), `--print-stats-sec N`.
+Transport: `auto` (TCP + mesh fallback with unsent-only failover), `tcp`, `udp` (direct), `mesh` (hops with preferred-path probe). Options: `--duration SEC`, `--drop-pct N`, `--batch N`, `--hop host:port` (repeatable, max 3), `--print-stats-sec N`.
 
 ## Scripts
 
@@ -80,5 +80,7 @@ Typical: **24 B** vs ~**67 B** JSON line, **~93%** encode CPU reduction.
 
 - Arena (`VirtualAlloc`) — no hot-path heap
 - Adaptive TCP batch `flush_at` + reconnect backoff
+- Auto transport: mesh only the unsent TCP suffix; operator TCP magic-scan resync
+- Mesh preferred-hop probe (~500 ms) + route fail counters in `--print-stats-sec`
 - Operator: NIO TCP+UDP, SPSC ring, seq gaps, `.zcm` record (`record=path.zcm`)
 - Future UI binds to `OperatorRuntime` / `OperatorSnapshot` / `NodeState` (no receive rewrite)

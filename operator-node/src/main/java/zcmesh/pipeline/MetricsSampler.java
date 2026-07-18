@@ -44,6 +44,7 @@ public final class MetricsSampler {
                 pipeline.sensorCurrent(),
                 pipeline.sensorTemp(),
                 pipeline.sensorOther(),
+                pipeline.tcpResyncBytes(),
                 fps,
                 bps,
                 now);

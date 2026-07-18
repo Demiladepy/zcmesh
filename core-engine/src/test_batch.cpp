@@ -43,6 +43,24 @@ int main() {
     expect(batch.count() == 1, "count 1");
     expect(!batch.should_flush() || batch.flush_at() == 1, "should_flush respects target");
 
+    /* Simulate a partial TCP send of 1.5 frames, then discard fully-sent. */
+    {
+        zcmesh::FrameBatch b2(arena, 8);
+        for (uint32_t i = 0; i < 3; ++i) {
+            s.seq = i;
+            expect(b2.push(s) != nullptr, "push for discard test");
+        }
+        expect(b2.count() == 3, "3 frames");
+        b2.note_sent(ZCMESH_WIRE_FRAME_SIZE + (ZCMESH_WIRE_FRAME_SIZE / 2));
+        expect(b2.has_partial_send(), "partial after note_sent");
+        expect(b2.unsent_frame_index() == 1, "first frame fully drained");
+        expect(b2.unsent_count() == 2, "two frames remain (partial + one)");
+        b2.discard_fully_sent();
+        expect(b2.count() == 2, "discard drops fully-sent frame");
+        expect(b2.send_offset() == 0, "offset reset after discard");
+        expect(b2.unsent_count() == 2, "both remaining unsent");
+    }
+
     if (g_fails == 0) {
         std::printf("zcmesh_test_batch: OK flush_at=%zu\n", batch.flush_at());
         return 0;

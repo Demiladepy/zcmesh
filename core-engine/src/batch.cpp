@@ -29,6 +29,42 @@ void FrameBatch::clear() noexcept {
     send_offset_ = 0;
 }
 
+std::size_t FrameBatch::unsent_frame_index() const noexcept {
+    return send_offset_ / ZCMESH_WIRE_FRAME_SIZE;
+}
+
+std::size_t FrameBatch::unsent_count() const noexcept {
+    const std::size_t idx = unsent_frame_index();
+    return idx >= count_ ? 0 : (count_ - idx);
+}
+
+const zcmesh_wire_frame* FrameBatch::unsent_frames() const noexcept {
+    return frames_ + unsent_frame_index();
+}
+
+void FrameBatch::note_sent(std::size_t n) noexcept {
+    const std::size_t total = this->bytes();
+    if (send_offset_ >= total) {
+        return;
+    }
+    send_offset_ = std::min(total, send_offset_ + n);
+}
+
+void FrameBatch::discard_fully_sent() noexcept {
+    const std::size_t fully = send_offset_ / ZCMESH_WIRE_FRAME_SIZE;
+    if (fully == 0) {
+        return;
+    }
+    if (fully >= count_) {
+        clear();
+        return;
+    }
+    const std::size_t remain = count_ - fully;
+    std::memmove(frames_, frames_ + fully, remain * sizeof(zcmesh_wire_frame));
+    count_ = remain;
+    send_offset_ = 0;
+}
+
 bool FrameBatch::flush_tcp(TcpClient& tcp) {
     if (empty() || !tcp.connected()) {
         return false;
