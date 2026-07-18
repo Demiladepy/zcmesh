@@ -44,4 +44,19 @@ bool FrameBatch::flush_tcp(TcpClient& tcp) {
     return true;
 }
 
+bool FrameBatch::flush_tcp_retry(TcpClient& tcp, int attempts) {
+    for (int i = 0; i < attempts; ++i) {
+        if (flush_tcp(tcp)) {
+            return true;
+        }
+        if (!tcp.connected()) {
+            return false;
+        }
+        if (empty()) {
+            return true;
+        }
+    }
+    return empty();
+}
+
 } // namespace zcmesh

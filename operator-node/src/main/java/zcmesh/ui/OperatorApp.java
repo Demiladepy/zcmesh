@@ -19,8 +19,11 @@ import javafx.stage.Stage;
 import zcmesh.net.FrameReceiver;
 import zcmesh.pipeline.TelemetryPipeline;
 import zcmesh.wire.WireFrame;
+import zcmesh.wire.ZcmWriter;
 
+import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -39,15 +42,26 @@ public final class OperatorApp extends Application {
 
     private Label rateLabel;
     private Label statsLabel;
+    private ZcmWriter recorder;
     private final ObservableList<NodeRow> rows = FXCollections.observableArrayList();
     private final Map<Integer, NodeRow> byNode = new HashMap<>();
 
     @Override
-    public void start(Stage stage) {
+    public void start(Stage stage) throws Exception {
         int port = DEFAULT_PORT;
-        Parameters params = getParameters();
-        if (!params.getRaw().isEmpty()) {
-            port = Integer.parseInt(params.getRaw().get(0));
+        Path recordPath = null;
+        List<String> raw = getParameters().getRaw();
+        for (String arg : raw) {
+            if (arg.startsWith("record=")) {
+                recordPath = Path.of(arg.substring("record=".length()));
+            } else {
+                port = Integer.parseInt(arg);
+            }
+        }
+
+        if (recordPath != null) {
+            recorder = new ZcmWriter(recordPath);
+            System.err.println("recording to " + recordPath);
         }
 
         pipeline = new TelemetryPipeline(8192);
@@ -106,6 +120,13 @@ public final class OperatorApp extends Application {
             int batch = 0;
             while (batch < 256 && (f = pipeline.poll(0)) != null) {
                 final WireFrame frame = f;
+                if (recorder != null) {
+                    try {
+                        recorder.write(frame);
+                    } catch (Exception ex) {
+                        ex.printStackTrace(System.err);
+                    }
+                }
                 Platform.runLater(() -> upsert(frame));
                 batch++;
             }
@@ -159,6 +180,15 @@ public final class OperatorApp extends Application {
         }
         if (receiverThread != null) {
             receiverThread.interrupt();
+        }
+        if (recorder != null) {
+            try {
+                System.err.println("closing record frames=" + recorder.frameCount());
+                recorder.close();
+            } catch (Exception ex) {
+                ex.printStackTrace(System.err);
+            }
+            recorder = null;
         }
     }
 

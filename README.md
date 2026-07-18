@@ -38,7 +38,7 @@ cmake --build build -j
 
 Binary: `core-engine/build/zcmesh_edge.exe` (MinGW) or `core-engine/build/Release/zcmesh_edge.exe` (MSVC).
 
-Also built: `zcmesh_bench`, `zcmesh_hop`, `zcmesh_capture`, `zcmesh_replay`, `zcmesh_test_frame` (`ctest` in build dir).
+Also built: `zcmesh_bench`, `zcmesh_hop`, `zcmesh_capture`, `zcmesh_replay`, `zcmesh_inspect`, `zcmesh_test_frame`, `zcmesh_test_zcm`.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) and [BENCHMARK.md](BENCHMARK.md).
 ## Build — Java operator
@@ -134,9 +134,17 @@ Cross-language CRC golden: `ctest` / `zcmesh_test_frame` and `.\gradlew.bat gold
 ```powershell
 .\zcmesh_capture.exe --listen 127.0.0.1:9910 --out run.zcm --seconds 8
 .\zcmesh_edge.exe --transport udp --operator 127.0.0.1:9910 --duration 7
+.\zcmesh_inspect.exe run.zcm
 .\zcmesh_replay.exe --in run.zcm --target 127.0.0.1:9900 --transport tcp --rate 500
 ```
 
-Edge finite run: `--duration SEC` (0 = forever).
+Operator-side record:
+
+```powershell
+.\gradlew.bat smoke -PsmokeRecord=..\operator-capture.zcm -PsmokeFrames=200
+# or UI: .\gradlew.bat run --args="9900 record=session.zcm"
+```
+
+Edge finite run: `--duration SEC` (0 = forever). Multi-sensor soak cycles voltage/current/temp.
 
 See [BENCHMARK.md](BENCHMARK.md) for measured encode vs JSON numbers.

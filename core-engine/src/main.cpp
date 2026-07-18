@@ -208,34 +208,10 @@ int main(int argc, char** argv) {
             if (elapsed >= duration_sec) {
                 break;
             }
-        }        int32_t raw = 0;
-        if (use_stdin) {
-            if (!(std::cin >> raw)) {
-                break;
-            }
-        } else if (file_path) {
-            if (!(file_in >> raw)) {
-                break;
-            }
-        } else {
-            const double t = static_cast<double>(seq) / rate_hz;
-            raw = static_cast<int32_t>(std::lround(1000.0 * std::sin(2.0 * 3.141592653589793 * 50.0 * t)));
         }
 
-        zcmesh::SensorSample sample{};
-        sample.seq = seq++;
-        sample.timestamp_ns = monotonic_ns();
-        sample.node_id = node_id;
-        sample.sensor_type = ZCMESH_SENSOR_VOLTAGE;
-        sample.flags = ZCMESH_FLAG_LAST_HOP;
-        sample.raw_value = raw;
-
-        if (!batch.push(sample)) {
-            std::fprintf(stderr, "batch full unexpectedly\n");
-            break;
-        }
-
-        if (batch.full()) {
+        /* Drain any back-pressured batch before accepting new samples. */
+        if (batch.full() || batch.has_partial_send()) {
             const std::size_t n = batch.count();
             bool ok = false;
             if (transport == Transport::Udp) {
@@ -243,15 +219,12 @@ int main(int argc, char** argv) {
             } else if (transport == Transport::Mesh) {
                 ok = flush_udp_mesh(router, udp, node_id, batch);
             } else if (transport == Transport::Tcp) {
-                ok = tcp.connected() && batch.flush_tcp(tcp);
-                if (!ok) {
-                    batch.clear();
-                    if (!tcp.connected()) {
-                        tcp.connect(op);
-                    }
+                if (!tcp.connected()) {
+                    tcp.connect(op);
                 }
+                ok = tcp.connected() && batch.flush_tcp_retry(tcp, 128);
             } else {
-                if (tcp.connected() && batch.flush_tcp(tcp)) {
+                if (tcp.connected() && batch.flush_tcp_retry(tcp, 64)) {
                     ok = true;
                 } else {
                     ok = flush_udp_mesh(router, udp, node_id, batch);
@@ -262,6 +235,81 @@ int main(int argc, char** argv) {
             }
             if (ok) {
                 sent_ok += n;
+            } else if (batch.empty()) {
+                sent_ok += n; /* partial accounting: emptied via mesh */
+            } else {
+                /* Still full — yield and retry next tick without dropping. */
+                ++sent_fail;
+                next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(period);
+                std::this_thread::sleep_until(next);
+                continue;
+            }
+        }
+
+        int32_t raw = 0;
+        uint8_t sensor = ZCMESH_SENSOR_VOLTAGE;
+        if (use_stdin) {
+            if (!(std::cin >> raw)) {
+                break;
+            }
+        } else if (file_path) {
+            if (!(file_in >> raw)) {
+                break;
+            }
+        } else {
+            const double t = static_cast<double>(seq) / rate_hz;
+            const int lane = static_cast<int>(seq % 3u);
+            if (lane == 0) {
+                sensor = ZCMESH_SENSOR_VOLTAGE;
+                raw = static_cast<int32_t>(std::lround(1000.0 * std::sin(2.0 * 3.141592653589793 * 50.0 * t)));
+            } else if (lane == 1) {
+                sensor = ZCMESH_SENSOR_CURRENT;
+                raw = static_cast<int32_t>(std::lround(500.0 * std::sin(2.0 * 3.141592653589793 * 50.0 * t + 1.0)));
+            } else {
+                sensor = ZCMESH_SENSOR_TEMP;
+                raw = static_cast<int32_t>(250 + std::lround(20.0 * std::sin(2.0 * 3.141592653589793 * 0.1 * t)));
+            }
+        }
+
+        zcmesh::SensorSample sample{};
+        sample.seq = seq++;
+        sample.timestamp_ns = monotonic_ns();
+        sample.node_id = node_id;
+        sample.sensor_type = sensor;
+        sample.flags = ZCMESH_FLAG_LAST_HOP;
+        sample.raw_value = raw;
+
+        if (!batch.push(sample)) {
+            /* Should not happen after drain; spin once. */
+            continue;
+        }
+
+        if (batch.full()) {
+            const std::size_t n = batch.count();
+            bool ok = false;
+            if (transport == Transport::Udp) {
+                ok = flush_udp_direct(udp, op, batch);
+            } else if (transport == Transport::Mesh) {
+                ok = flush_udp_mesh(router, udp, node_id, batch);
+            } else if (transport == Transport::Tcp) {
+                if (!tcp.connected()) {
+                    tcp.connect(op);
+                }
+                ok = tcp.connected() && batch.flush_tcp_retry(tcp, 128);
+            } else {
+                if (tcp.connected() && batch.flush_tcp_retry(tcp, 64)) {
+                    ok = true;
+                } else {
+                    ok = flush_udp_mesh(router, udp, node_id, batch);
+                    if (!tcp.connected()) {
+                        tcp.connect(op);
+                    }
+                }
+            }
+            if (ok) {
+                sent_ok += n;
+            } else if (!batch.empty()) {
+                /* Keep frames; next loop drains. */
             } else {
                 sent_fail += n;
             }
@@ -283,7 +331,7 @@ int main(int argc, char** argv) {
             flush_udp_direct(udp, op, batch);
         } else if (transport == Transport::Mesh) {
             flush_udp_mesh(router, udp, node_id, batch);
-        } else if (!(tcp.connected() && batch.flush_tcp(tcp))) {
+        } else if (!(tcp.connected() && batch.flush_tcp_retry(tcp, 256))) {
             flush_udp_mesh(router, udp, node_id, batch);
         }
     }

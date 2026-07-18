@@ -30,11 +30,13 @@ tasks.register<JavaExec>("smoke") {
     description = "Headless NIO receiver for edge→operator smoke"
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("zcmesh.smoke.HeadlessOperator")
-    args(
+    val smokeArgs = mutableListOf(
         project.findProperty("smokePort")?.toString() ?: "9900",
         project.findProperty("smokeFrames")?.toString() ?: "200",
         project.findProperty("smokeTimeout")?.toString() ?: "60"
     )
+    project.findProperty("smokeRecord")?.toString()?.let { smokeArgs.add(it) }
+    args(smokeArgs)
 }
 
 tasks.register<JavaExec>("golden") {

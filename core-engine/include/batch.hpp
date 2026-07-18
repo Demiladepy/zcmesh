@@ -22,8 +22,13 @@ public:
     zcmesh_wire_frame* push(const SensorSample& sample);
     void clear() noexcept;
 
-    /* Non-blocking flush to TCP. Returns true if entire batch sent. */
+    /* Non-blocking flush. false = would-block or hard fail; state preserved for resume. */
     bool flush_tcp(TcpClient& tcp);
+
+    /* Retry would-block up to attempts; returns true if fully sent. */
+    bool flush_tcp_retry(TcpClient& tcp, int attempts);
+
+    bool has_partial_send() const noexcept { return send_offset_ > 0; }
 
     const void* data() const noexcept { return frames_; }
 

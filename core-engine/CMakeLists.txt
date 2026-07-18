@@ -40,6 +40,8 @@ zcmesh_bin(zcmesh_hop src/hop.cpp)
 zcmesh_bin(zcmesh_test_frame src/test_frame.cpp)
 zcmesh_bin(zcmesh_capture src/capture.cpp)
 zcmesh_bin(zcmesh_replay src/replay.cpp)
+zcmesh_bin(zcmesh_inspect src/inspect.cpp)
+zcmesh_bin(zcmesh_test_zcm src/test_zcm.cpp)
 
 if(MSVC)
     target_compile_options(zcmesh_core PRIVATE /W4)
@@ -49,3 +51,4 @@ endif()
 
 enable_testing()
 add_test(NAME frame_codec COMMAND zcmesh_test_frame)
+add_test(NAME zcm_roundtrip COMMAND zcmesh_test_zcm)

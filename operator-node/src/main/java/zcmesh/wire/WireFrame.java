@@ -77,6 +77,22 @@ public final class WireFrame {
                 reserved, rawValue, checksum, ok);
     }
 
+    /** Encode this frame into buf (must have SIZE bytes remaining). Absolute writes. */
+    public void encode(ByteBuffer buf) {
+        ByteBuffer b = buf.slice().order(ByteOrder.LITTLE_ENDIAN);
+        b.putShort(OFF_MAGIC, (short) magic);
+        b.put(OFF_VERSION, (byte) version);
+        b.put(OFF_FLAGS, (byte) flags);
+        b.putInt(OFF_SEQ, (int) seq);
+        b.putInt(OFF_TIMESTAMP_LO, (int) timestampLo);
+        b.putShort(OFF_NODE_ID, (short) nodeId);
+        b.put(OFF_SENSOR_TYPE, (byte) sensorType);
+        b.put(OFF_RESERVED, (byte) reserved);
+        b.putInt(OFF_RAW_VALUE, rawValue);
+        b.putInt(OFF_CHECKSUM, (int) checksum);
+        buf.position(buf.position() + SIZE);
+    }
+
     /** IEEE CRC-32 matching the C++ table implementation (poly 0xEDB88320). */
     public static long crc32Ieee(byte[] data) {
         CRC32 crc = new CRC32();
