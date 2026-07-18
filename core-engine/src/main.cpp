@@ -4,6 +4,7 @@
 #include "net.hpp"
 #include "router.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -46,8 +47,9 @@ uint64_t monotonic_ns() {
 void usage(const char* argv0) {
     std::fprintf(stderr,
                  "Usage: %s [--operator host:port] [--node-id N] [--rate Hz] [--batch N]\n"
-                 "          [--transport auto|tcp|udp|mesh] [--duration SEC] [--file path] [--stdin]\n"
-                 "  auto: TCP then mesh fallback; tcp: TCP only; udp: UDP to --operator; mesh: UDP hops only.\n",
+                 "          [--transport auto|tcp|udp|mesh] [--duration SEC] [--drop-pct N]\n"
+                 "          [--file path] [--stdin]\n"
+                 "  Adaptive TCP batching + exponential reconnect. --drop-pct injects local loss.\n",
                  argv0);
 }
 
@@ -78,6 +80,67 @@ bool flush_udp_mesh(zcmesh::MeshRouter& router, zcmesh::UdpSocket& udp, uint16_t
     return forwarded == n;
 }
 
+bool should_drop(uint32_t seq, int drop_pct) {
+    if (drop_pct <= 0) {
+        return false;
+    }
+    if (drop_pct >= 100) {
+        return true;
+    }
+    const uint32_t h = seq * 2654435761u;
+    return static_cast<int>((h >> 24) % 100u) < drop_pct;
+}
+
+struct ReconnectGate {
+    uint64_t next_ns = 0;
+    int backoff_ms = 50;
+
+    bool try_connect(zcmesh::TcpClient& tcp, const zcmesh::Endpoint& ep) {
+        if (tcp.connected()) {
+            return true;
+        }
+        const uint64_t now = monotonic_ns();
+        if (now < next_ns) {
+            return false;
+        }
+        if (tcp.connect(ep)) {
+            backoff_ms = 50;
+            next_ns = 0;
+            std::fprintf(stderr, "tcp uplink reconnected %s:%u\n", ep.host, ep.port);
+            return true;
+        }
+        next_ns = now + static_cast<uint64_t>(backoff_ms) * 1000000ull;
+        backoff_ms = std::min(2000, backoff_ms * 2);
+        return false;
+    }
+};
+
+bool flush_batch(Transport transport, zcmesh::FrameBatch& batch, zcmesh::TcpClient& tcp,
+                 zcmesh::UdpSocket& udp, zcmesh::MeshRouter& router, const zcmesh::Endpoint& op,
+                 uint16_t node_id, ReconnectGate& gate) {
+    const uint64_t t0 = monotonic_ns();
+    bool ok = false;
+    if (transport == Transport::Udp) {
+        ok = flush_udp_direct(udp, op, batch);
+    } else if (transport == Transport::Mesh) {
+        ok = flush_udp_mesh(router, udp, node_id, batch);
+    } else if (transport == Transport::Tcp) {
+        gate.try_connect(tcp, op);
+        ok = tcp.connected() && batch.flush_tcp_retry(tcp, 128);
+        batch.adapt(ok, monotonic_ns() - t0);
+    } else {
+        gate.try_connect(tcp, op);
+        if (tcp.connected() && batch.flush_tcp_retry(tcp, 64)) {
+            ok = true;
+            batch.adapt(true, monotonic_ns() - t0);
+        } else {
+            batch.adapt(false, monotonic_ns() - t0);
+            ok = flush_udp_mesh(router, udp, node_id, batch);
+        }
+    }
+    return ok;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -88,7 +151,8 @@ int main(int argc, char** argv) {
     const char* file_path = nullptr;
     bool use_stdin = false;
     Transport transport = Transport::Auto;
-    double duration_sec = 0.0; /* 0 = run forever */
+    double duration_sec = 0.0;
+    int drop_pct = 0;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--operator") == 0 && i + 1 < argc) {
@@ -118,6 +182,8 @@ int main(int argc, char** argv) {
             }
         } else if (std::strcmp(argv[i], "--duration") == 0 && i + 1 < argc) {
             duration_sec = std::atof(argv[++i]);
+        } else if (std::strcmp(argv[i], "--drop-pct") == 0 && i + 1 < argc) {
+            drop_pct = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--file") == 0 && i + 1 < argc) {
             file_path = argv[++i];
         } else if (std::strcmp(argv[i], "--stdin") == 0) {
@@ -163,16 +229,14 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    ReconnectGate gate;
     zcmesh::TcpClient tcp;
     if (transport != Transport::Udp && transport != Transport::Mesh) {
-        if (!tcp.connect(op)) {
-            std::fprintf(stderr, "tcp connect to %s:%u failed\n", op.host, op.port);
+        if (!gate.try_connect(tcp, op)) {
+            std::fprintf(stderr, "tcp connect to %s:%u failed (will backoff-retry)\n", op.host, op.port);
             if (transport == Transport::Tcp) {
-                zcmesh::net_shutdown();
-                return 1;
+                /* stay up and retry — do not hard-exit */
             }
-        } else {
-            std::fprintf(stderr, "tcp uplink connected %s:%u (TCP_NODELAY)\n", op.host, op.port);
         }
     }
 
@@ -190,6 +254,7 @@ int main(int argc, char** argv) {
     uint32_t seq = 0;
     uint64_t sent_ok = 0;
     uint64_t sent_fail = 0;
+    uint64_t dropped = 0;
     auto next = std::chrono::steady_clock::now();
     const auto start = next;
     const bool timed = duration_sec > 0.0;
@@ -198,8 +263,8 @@ int main(int argc, char** argv) {
                       : transport == Transport::Udp ? "udp"
                       : transport == Transport::Mesh ? "mesh" : "auto";
     std::fprintf(stderr,
-                 "zcmesh_edge node=%u rate=%.1fHz batch=%zu transport=%s duration=%.1fs frame=%uB\n",
-                 node_id, rate_hz, batch_size, tname, duration_sec, ZCMESH_WIRE_FRAME_SIZE);
+                 "zcmesh_edge node=%u rate=%.1fHz batch=%zu transport=%s drop_pct=%d frame=%uB\n",
+                 node_id, rate_hz, batch_size, tname, drop_pct, ZCMESH_WIRE_FRAME_SIZE);
 
     while (true) {
         if (timed) {
@@ -210,35 +275,14 @@ int main(int argc, char** argv) {
             }
         }
 
-        /* Drain any back-pressured batch before accepting new samples. */
-        if (batch.full() || batch.has_partial_send()) {
+        if (batch.should_flush() || batch.has_partial_send() || batch.full()) {
             const std::size_t n = batch.count();
-            bool ok = false;
-            if (transport == Transport::Udp) {
-                ok = flush_udp_direct(udp, op, batch);
-            } else if (transport == Transport::Mesh) {
-                ok = flush_udp_mesh(router, udp, node_id, batch);
-            } else if (transport == Transport::Tcp) {
-                if (!tcp.connected()) {
-                    tcp.connect(op);
-                }
-                ok = tcp.connected() && batch.flush_tcp_retry(tcp, 128);
-            } else {
-                if (tcp.connected() && batch.flush_tcp_retry(tcp, 64)) {
-                    ok = true;
-                } else {
-                    ok = flush_udp_mesh(router, udp, node_id, batch);
-                    if (!tcp.connected()) {
-                        tcp.connect(op);
-                    }
-                }
-            }
+            const bool ok = flush_batch(transport, batch, tcp, udp, router, op, node_id, gate);
             if (ok) {
                 sent_ok += n;
             } else if (batch.empty()) {
-                sent_ok += n; /* partial accounting: emptied via mesh */
+                sent_ok += n;
             } else {
-                /* Still full — yield and retry next tick without dropping. */
                 ++sent_fail;
                 next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(period);
                 std::this_thread::sleep_until(next);
@@ -271,6 +315,14 @@ int main(int argc, char** argv) {
             }
         }
 
+        if (should_drop(seq, drop_pct)) {
+            ++seq;
+            ++dropped;
+            next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(period);
+            std::this_thread::sleep_until(next);
+            continue;
+        }
+
         zcmesh::SensorSample sample{};
         sample.seq = seq++;
         sample.timestamp_ns = monotonic_ns();
@@ -280,46 +332,28 @@ int main(int argc, char** argv) {
         sample.raw_value = raw;
 
         if (!batch.push(sample)) {
-            /* Should not happen after drain; spin once. */
             continue;
         }
 
-        if (batch.full()) {
+        if (batch.should_flush() || batch.full()) {
             const std::size_t n = batch.count();
-            bool ok = false;
-            if (transport == Transport::Udp) {
-                ok = flush_udp_direct(udp, op, batch);
-            } else if (transport == Transport::Mesh) {
-                ok = flush_udp_mesh(router, udp, node_id, batch);
-            } else if (transport == Transport::Tcp) {
-                if (!tcp.connected()) {
-                    tcp.connect(op);
-                }
-                ok = tcp.connected() && batch.flush_tcp_retry(tcp, 128);
-            } else {
-                if (tcp.connected() && batch.flush_tcp_retry(tcp, 64)) {
-                    ok = true;
-                } else {
-                    ok = flush_udp_mesh(router, udp, node_id, batch);
-                    if (!tcp.connected()) {
-                        tcp.connect(op);
-                    }
-                }
-            }
+            const bool ok = flush_batch(transport, batch, tcp, udp, router, op, node_id, gate);
             if (ok) {
                 sent_ok += n;
             } else if (!batch.empty()) {
-                /* Keep frames; next loop drains. */
+                /* retain for drain path */
             } else {
                 sent_fail += n;
             }
         }
 
         if ((seq & 0x3FFu) == 0) {
-            std::fprintf(stderr, "seq=%u ok=%llu fail=%llu\n",
+            std::fprintf(stderr, "seq=%u ok=%llu fail=%llu drop=%llu flush_at=%zu\n",
                          seq,
                          static_cast<unsigned long long>(sent_ok),
-                         static_cast<unsigned long long>(sent_fail));
+                         static_cast<unsigned long long>(sent_fail),
+                         static_cast<unsigned long long>(dropped),
+                         batch.flush_at());
         }
 
         next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(period);
@@ -327,19 +361,14 @@ int main(int argc, char** argv) {
     }
 
     if (!batch.empty()) {
-        if (transport == Transport::Udp) {
-            flush_udp_direct(udp, op, batch);
-        } else if (transport == Transport::Mesh) {
-            flush_udp_mesh(router, udp, node_id, batch);
-        } else if (!(tcp.connected() && batch.flush_tcp_retry(tcp, 256))) {
-            flush_udp_mesh(router, udp, node_id, batch);
-        }
+        flush_batch(transport, batch, tcp, udp, router, op, node_id, gate);
     }
 
-    std::fprintf(stderr, "zcmesh_edge done seq=%u ok=%llu fail=%llu\n",
+    std::fprintf(stderr, "zcmesh_edge done seq=%u ok=%llu fail=%llu drop=%llu\n",
                  seq,
                  static_cast<unsigned long long>(sent_ok),
-                 static_cast<unsigned long long>(sent_fail));
+                 static_cast<unsigned long long>(sent_fail),
+                 static_cast<unsigned long long>(dropped));
     zcmesh::net_shutdown();
     return 0;
 }

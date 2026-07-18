@@ -1,6 +1,7 @@
 package zcmesh.smoke;
 
 import zcmesh.net.FrameReceiver;
+import zcmesh.net.StatsServer;
 import zcmesh.pipeline.TelemetryPipeline;
 import zcmesh.wire.WireFrame;
 import zcmesh.wire.ZcmWriter;
@@ -8,8 +9,9 @@ import zcmesh.wire.ZcmWriter;
 import java.nio.file.Path;
 
 /**
- * Headless soak listener for CI / local smoke — no JavaFX.
+ * Headless soak listener — no JavaFX.
  * Args: [port] [minFrames] [timeoutSec] [record.zcm]
+ * Stats side-channel always on port+9 (e.g. 9909 when telemetry is 9900).
  */
 public final class HeadlessOperator {
     public static void main(String[] args) throws Exception {
@@ -17,12 +19,17 @@ public final class HeadlessOperator {
         long minFrames = args.length > 1 ? Long.parseLong(args[1]) : 100;
         int timeoutSec = args.length > 2 ? Integer.parseInt(args[2]) : 30;
         Path recordPath = args.length > 3 ? Path.of(args[3]) : null;
+        int statsPort = port + 9;
 
         TelemetryPipeline pipeline = new TelemetryPipeline(8192);
         FrameReceiver receiver = new FrameReceiver(port, pipeline);
-        Thread t = new Thread(receiver, "frame-receiver");
-        t.setDaemon(true);
-        t.start();
+        StatsServer stats = new StatsServer(statsPort, pipeline);
+        Thread rx = new Thread(receiver, "frame-receiver");
+        Thread st = new Thread(stats, "stats-server");
+        rx.setDaemon(true);
+        st.setDaemon(true);
+        rx.start();
+        st.start();
 
         int exitCode = 1;
         ZcmWriter writer = null;
@@ -40,9 +47,10 @@ public final class HeadlessOperator {
                 }
                 long ok = pipeline.framesOk();
                 if (ok >= minFrames) {
-                    System.out.printf("SMOKE_OK frames=%d crc_fail=%d gaps=%d nodes=%d last_seq=%d bytes=%d%n",
+                    System.out.printf("SMOKE_OK frames=%d crc_fail=%d gaps=%d nodes=%d last_seq=%d bytes=%d drops=%d%n",
                             ok, pipeline.framesCrcFail(), pipeline.seqGaps(),
-                            pipeline.uniqueNodes(), pipeline.lastSeq(), pipeline.bytesIn());
+                            pipeline.uniqueNodes(), pipeline.lastSeq(), pipeline.bytesIn(),
+                            pipeline.ringDrops());
                     if (writer != null) {
                         System.out.printf("RECORD frames=%d path=%s%n", writer.frameCount(), recordPath);
                     }
@@ -57,6 +65,7 @@ public final class HeadlessOperator {
             }
         } finally {
             receiver.stop();
+            stats.stop();
             if (writer != null) {
                 writer.close();
             }

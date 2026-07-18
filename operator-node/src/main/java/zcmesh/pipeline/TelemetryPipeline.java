@@ -117,6 +117,10 @@ public final class TelemetryPipeline {
         return interArrivalEwmaNs.get();
     }
 
+    public long ringDrops() {
+        return ring.drops();
+    }
+
     public int queued() {
         return ring.size();
     }

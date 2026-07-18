@@ -1,11 +1,16 @@
 #include "batch.hpp"
 
+#include <algorithm>
 #include <cstring>
 
 namespace zcmesh {
 
 FrameBatch::FrameBatch(Arena& arena, std::size_t capacity_frames)
-    : frames_(nullptr), capacity_(capacity_frames), count_(0), send_offset_(0) {
+    : frames_(nullptr),
+      capacity_(capacity_frames),
+      count_(0),
+      send_offset_(0),
+      flush_at_(capacity_frames) {
     frames_ = arena.alloc<zcmesh_wire_frame>(capacity_frames);
     std::memset(frames_, 0, sizeof(zcmesh_wire_frame) * capacity_frames);
 }
@@ -57,6 +62,16 @@ bool FrameBatch::flush_tcp_retry(TcpClient& tcp, int attempts) {
         }
     }
     return empty();
+}
+
+void FrameBatch::adapt(bool fully_sent, uint64_t flush_ns) noexcept {
+    if (!fully_sent || flush_ns > 2'000'000ull) {
+        flush_at_ = std::max<std::size_t>(1, flush_at_ / 2);
+        return;
+    }
+    if (flush_ns < 200'000ull && flush_at_ < capacity_) {
+        flush_at_ = std::min(capacity_, flush_at_ + 1);
+    }
 }
 
 } // namespace zcmesh

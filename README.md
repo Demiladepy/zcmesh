@@ -40,7 +40,7 @@ Binary: `core-engine/build/zcmesh_edge.exe` (MinGW) or `core-engine/build/Releas
 
 Also built: `zcmesh_bench`, `zcmesh_hop`, `zcmesh_capture`, `zcmesh_replay`, `zcmesh_inspect`, `zcmesh_test_frame`, `zcmesh_test_zcm`.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) and [BENCHMARK.md](BENCHMARK.md).
+See [ARCHITECTURE.md](ARCHITECTURE.md), [PROTOCOL.md](PROTOCOL.md), [BENCHMARK.md](BENCHMARK.md), and [HACKATHON.md](HACKATHON.md).
 ## Build — Java operator
 
 Requirements: JDK 17+, network for first Gradle dependency resolve.
@@ -125,6 +125,7 @@ One-shot local mesh demo:
 .\scripts\demo.ps1 -LossPct 5
 .\scripts\demo-multinode.ps1
 .\scripts\demo-replay.ps1
+.\scripts\soak.ps1
 ```
 
 Cross-language CRC golden: `ctest` / `zcmesh_test_frame` and `.\gradlew.bat golden`.

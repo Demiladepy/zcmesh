@@ -17,6 +17,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import zcmesh.net.FrameReceiver;
+import zcmesh.net.StatsServer;
 import zcmesh.pipeline.TelemetryPipeline;
 import zcmesh.wire.WireFrame;
 import zcmesh.wire.ZcmWriter;
@@ -34,7 +35,9 @@ public final class OperatorApp extends Application {
 
     private TelemetryPipeline pipeline;
     private FrameReceiver receiver;
+    private StatsServer statsServer;
     private Thread receiverThread;
+    private Thread statsThread;
     private ScheduledExecutorService ticker;
     private long prevOk;
     private long prevBytes;
@@ -66,9 +69,14 @@ public final class OperatorApp extends Application {
 
         pipeline = new TelemetryPipeline(8192);
         receiver = new FrameReceiver(port, pipeline);
+        statsServer = new StatsServer(port + 9, pipeline);
         receiverThread = new Thread(receiver, "frame-receiver");
+        statsThread = new Thread(statsServer, "stats-server");
         receiverThread.setDaemon(true);
+        statsThread.setDaemon(true);
         receiverThread.start();
+        statsThread.start();
+        System.err.println("stats side-channel on " + (port + 9));
 
         rateLabel = new Label("frames/s: 0   bytes/s: 0");
         statsLabel = new Label("ok: 0   crc_fail: 0   gaps: 0   last_seq: -   queued: 0");
@@ -131,9 +139,9 @@ public final class OperatorApp extends Application {
                 batch++;
             }
             Platform.runLater(() -> statsLabel.setText(String.format(
-                    "ok: %d   crc_fail: %d   gaps: %d   last_seq: %d   queued: %d   ia_ewma_us: %.0f",
+                    "ok: %d   crc_fail: %d   gaps: %d   drops: %d   last_seq: %d   queued: %d   ia_ewma_us: %.0f",
                     pipeline.framesOk(), pipeline.framesCrcFail(), pipeline.seqGaps(),
-                    pipeline.lastSeq(), pipeline.queued(),
+                    pipeline.ringDrops(), pipeline.lastSeq(), pipeline.queued(),
                     pipeline.interArrivalEwmaNs() / 1000.0)));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -175,11 +183,17 @@ public final class OperatorApp extends Application {
         if (receiver != null) {
             receiver.stop();
         }
+        if (statsServer != null) {
+            statsServer.stop();
+        }
         if (ticker != null) {
             ticker.shutdownNow();
         }
         if (receiverThread != null) {
             receiverThread.interrupt();
+        }
+        if (statsThread != null) {
+            statsThread.interrupt();
         }
         if (recorder != null) {
             try {

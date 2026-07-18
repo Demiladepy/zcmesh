@@ -26,7 +26,7 @@ demo-*.txt
 multi-*.txt
 cap-*.txt
 replay-*.txt
-capture-demo.zcm
+soak-*.txt
 .DS_Store
 Thumbs.db
 *.log
