@@ -67,6 +67,7 @@ Transport: `auto` (TCP + mesh fallback with unsent-only failover), `tcp`, `udp` 
 .\scripts\demo-replay.ps1
 .\scripts\soak.ps1
 .\scripts\soak-failover.ps1
+.\scripts\soak-failover-cpp.ps1
 .\scripts\soak-loss.ps1
 .\scripts\soak-preferred-hop.ps1
 ```
@@ -91,7 +92,8 @@ Typical: **24 B** vs ~**67 B** JSON line, **~93%** encode CPU reduction.
 - `soak-preferred-hop.ps1`: `zcmesh_ctl` SET_SKIP/CLEAR via edge `--control`
 - Live mesh control: 8-byte UDP `mesh_control.h` + `zcmesh_ctl`
 - Live `dups=` / `last_hop_pct` / hop_idx on operator stats
-- CI gates `soak-loss.ps1` on Windows after core build
+- CI gates `soak-loss.ps1` + `soak-failover-cpp` (Win/Linux)
+- Capture `--mode udp|tcp|both` with TCP magic-scan resync
 - Inspect: per-node seq gaps, hop index / LAST_HOP, SUMMARY line
 - Replay: `--pace capture` (default) follows `timestamp_lo` deltas; `--rate` for fixed Hz
 - Operator: NIO TCP+UDP, SPSC ring, seq gaps, `.zcm` record (`record=path.zcm`)

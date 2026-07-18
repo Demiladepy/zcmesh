@@ -26,6 +26,9 @@ jobs:
       - name: Soak loss (inspect gaps)
         run: powershell -NoProfile -ExecutionPolicy Bypass -File ..\scripts\soak-loss.ps1 -Seconds 4 -Rate 400 -LossPct 15 -ExpectGapsMin 3
         working-directory: core-engine
+      - name: Soak failover (C++ only)
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ..\scripts\soak-failover-cpp.ps1 -Seconds 5 -Rate 400
+        working-directory: core-engine
 
   core-linux:
     runs-on: ubuntu-latest
@@ -42,6 +45,9 @@ jobs:
         working-directory: core-engine
       - name: Bench
         run: ./build/zcmesh_bench 200000
+        working-directory: core-engine
+      - name: Soak failover (C++ only)
+        run: bash ../scripts/soak-failover-cpp.sh 5 400
         working-directory: core-engine
 
   operator-node:

@@ -28,6 +28,8 @@ cap-*.txt
 replay-*.txt
 soak-*.txt
 failover-*.txt
+failover-cpp*
+tcp-cap*
 loss-*.txt
 prefhop-*.txt
 zcmesh.hopskip

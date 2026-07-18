@@ -10,7 +10,7 @@ $env:JAVA_HOME = $JavaHome
 $env:Path = "$JavaHome\bin;$env:Path"
 
 $cap = Start-Process -FilePath (Join-Path $Bin "zcmesh_capture.exe") `
-    -ArgumentList @("--listen", "127.0.0.1:9910", "--out", $Zcm, "--seconds", "$Seconds") `
+    -ArgumentList @("--listen", "127.0.0.1:9910", "--out", $Zcm, "--seconds", "$Seconds", "--mode", "udp") `
     -RedirectStandardError (Join-Path $Root "cap-err.txt") -PassThru
 Start-Sleep -Seconds 1
 $edge = Start-Process -FilePath (Join-Path $Bin "zcmesh_edge.exe") `
