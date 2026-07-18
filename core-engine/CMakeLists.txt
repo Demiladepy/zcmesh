@@ -22,6 +22,9 @@ target_include_directories(zcmesh_core
 if(WIN32)
     target_link_libraries(zcmesh_core PUBLIC ws2_32)
     target_compile_definitions(zcmesh_core PUBLIC _WIN32_WINNT=0x0601)
+else()
+    find_package(Threads REQUIRED)
+    target_link_libraries(zcmesh_core PUBLIC Threads::Threads)
 endif()
 
 function(zcmesh_bin name src)

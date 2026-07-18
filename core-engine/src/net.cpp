@@ -1,6 +1,7 @@
 #include "net.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #if defined(_WIN32)
