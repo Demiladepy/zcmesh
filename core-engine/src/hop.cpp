@@ -29,11 +29,15 @@ void usage(const char* argv0) {
 
 bool set_reuse(socket_t fd) {
     int on = 1;
+    int rcv = 1024 * 1024;
 #if defined(_WIN32)
-    return setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&on), sizeof(on)) == 0;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&on), sizeof(on));
+    setsockopt(fd, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&rcv), sizeof(rcv));
 #else
-    return setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) == 0;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcv, sizeof(rcv));
 #endif
+    return true;
 }
 
 /* Deterministic drop: hash(seq) %% 100 < loss_pct. */

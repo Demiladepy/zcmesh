@@ -1,20 +1,19 @@
 # ZCMesh — Zero-Copy Binary Telemetry Engine
 
-Production-oriented edge telemetry: C++ arena-backed packing + mesh fallback routing, Java NIO/JavaFX operator gateway. Fixed **24-byte** little-endian frames. No JSON, no Protobuf, no cloud.
-
-## Layout
+C++ arena-backed packing + mesh fallback routing, Java NIO/JavaFX operator. Fixed **24-byte** LE frames. No JSON, no Protobuf, no cloud.
 
 ```
 zcmesh/
-  shared/wire_frame.h     # canonical wire layout
-  core-engine/            # CMake C++17 (zcmesh_core + zcmesh_edge)
-  operator-node/          # Gradle Java 17 + JavaFX operator
+  shared/           # wire_frame.h, zcm_file.h, golden_frame.hex
+  core-engine/      # CMake C++17
+  operator-node/    # Gradle Java 17 + JavaFX
+  scripts/          # demo / soak / bench
 ```
 
-## Wire frame (24 bytes, LE)
+## Wire frame (24 B, LE)
 
-| Offset | Field | Type |
-|--------|-------|------|
+| Off | Field | Type |
+|-----|-------|------|
 | 0 | magic `0x5A43` | u16 |
 | 2 | version `1` | u8 |
 | 3 | flags | u8 |
@@ -24,103 +23,44 @@ zcmesh/
 | 14 | sensor_type | u8 |
 | 15 | reserved | u8 |
 | 16 | raw_value | i32 |
-| 20 | checksum (CRC32 of first 20 bytes) | u32 |
+| 20 | checksum CRC32 of `[0,20)` | u32 |
 
-## Build — C++ edge
+`.zcm` capture: 16-byte header (`ZCM1`) + `frame_count` × 24-byte frames (`shared/zcm_file.h`).
 
-Requirements: CMake 3.16+, C++17 compiler (MSVC or clang/gcc), Winsock on Windows.
+## Build
 
 ```powershell
 cd core-engine
 cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
+ctest --test-dir build --output-on-failure
+
+cd ..\operator-node
+.\gradlew.bat classes golden
 ```
 
-Binary: `core-engine/build/zcmesh_edge.exe` (MinGW) or `core-engine/build/Release/zcmesh_edge.exe` (MSVC).
+Binaries: `zcmesh_edge`, `zcmesh_bench`, `zcmesh_hop`, `zcmesh_capture`, `zcmesh_replay`, `zcmesh_inspect`, tests.
 
-Also built: `zcmesh_bench`, `zcmesh_hop`, `zcmesh_capture`, `zcmesh_replay`, `zcmesh_inspect`, `zcmesh_test_frame`, `zcmesh_test_zcm`.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md), [PROTOCOL.md](PROTOCOL.md), [BENCHMARK.md](BENCHMARK.md), and [HACKATHON.md](HACKATHON.md).
-## Build — Java operator
-
-Requirements: JDK 17+, network for first Gradle dependency resolve.
+## Run
 
 ```powershell
+# operator (UI) — telemetry :9900, stats :9909
 cd operator-node
 .\gradlew.bat run
-```
 
-Listen port defaults to `9900`. Override: `.\gradlew.bat run --args="9900"`.
-
-## Run end-to-end
-
-Terminal 1 — operator:
-
-```powershell
-cd operator-node
-.\gradlew.bat run
-```
-
-Terminal 2 — edge (after operator is up):
-
-```powershell
-cd core-engine\build
-.\zcmesh_edge.exe --operator 127.0.0.1:9900 --node-id 1 --rate 1000 --batch 32
-```
-
-Headless smoke (no JavaFX):
-
-```powershell
-# terminal A
-cd operator-node
-.\gradlew.bat smoke
-
-# terminal B (once "listening on 9900")
+# edge
 cd ..\core-engine\build
-.\zcmesh_edge.exe --operator 127.0.0.1:9900 --rate 500
+.\zcmesh_edge.exe --operator 127.0.0.1:9900 --rate 1000 --batch 32
 ```
 
-Optional value sources: `--stdin` or `--file path` (one `int32` per line). Default stream is a hardware-clocked 50 Hz sine for soak/bench.
+Headless smoke: `.\gradlew.bat smoke` then start edge. Stats scrape (while operator up): TCP connect to `127.0.0.1:9909`.
 
-## Notes
+Transport: `auto` (TCP + mesh fallback), `tcp`, `udp` (direct), `mesh` (hops `9901→9902→operator`). Options: `--duration SEC`, `--drop-pct N`, `--batch N`.
 
-- Arena is a single contiguous block (`VirtualAlloc` on Windows); hot path never calls the heap allocator.
-- TCP uplink to the operator is preferred; UDP mesh hops `9901`/`9902` then operator UDP are deterministic fallbacks.
-- Operator decodes with direct `ByteBuffer` absolute reads only.
-
-## Benchmark (binary vs JSON snprintf)
+## Scripts
 
 ```powershell
-cd core-engine\build
-.\zcmesh_bench.exe 500000
-```
-
-Reports bytes/frame and ns/op for arena binary pack vs a typical JSON telemetry line.
-
-Example (local): `24 B` vs `~67 B` payload, **~94%** encode CPU reduction.
-## Mesh hop relay
-
-```powershell
-.\zcmesh_hop.exe --listen 127.0.0.1:9901 --forward 127.0.0.1:9900
-# optional loss injection for gap demo:
-.\zcmesh_hop.exe --listen 127.0.0.1:9901 --forward 127.0.0.1:9900 --loss-pct 5
-```
-
-Force UDP direct to operator:
-
-```powershell
-.\zcmesh_edge.exe --transport udp --operator 127.0.0.1:9900 --rate 500 --batch 8
-```
-
-Force UDP mesh hops (`9901` → `9902` → operator):
-
-```powershell
-.\zcmesh_edge.exe --transport mesh --rate 500
-```
-
-One-shot local mesh demo:
-
-```powershell
+.\scripts\bench.ps1
 .\scripts\demo.ps1
 .\scripts\demo.ps1 -LossPct 5
 .\scripts\demo-multinode.ps1
@@ -128,24 +68,16 @@ One-shot local mesh demo:
 .\scripts\soak.ps1
 ```
 
-Cross-language CRC golden: `ctest` / `zcmesh_test_frame` and `.\gradlew.bat golden`.
-
-## Capture / replay
+## Benchmark
 
 ```powershell
-.\zcmesh_capture.exe --listen 127.0.0.1:9910 --out run.zcm --seconds 8
-.\zcmesh_edge.exe --transport udp --operator 127.0.0.1:9910 --duration 7
-.\zcmesh_inspect.exe run.zcm
-.\zcmesh_replay.exe --in run.zcm --target 127.0.0.1:9900 --transport tcp --rate 500
+.\core-engine\build\zcmesh_bench.exe 500000
 ```
 
-Operator-side record:
+Typical: **24 B** vs ~**67 B** JSON line, **~93%** encode CPU reduction.
 
-```powershell
-.\gradlew.bat smoke -PsmokeRecord=..\operator-capture.zcm -PsmokeFrames=200
-# or UI: .\gradlew.bat run --args="9900 record=session.zcm"
-```
+## Design notes
 
-Edge finite run: `--duration SEC` (0 = forever). Multi-sensor soak cycles voltage/current/temp.
-
-See [BENCHMARK.md](BENCHMARK.md) for measured encode vs JSON numbers.
+- Arena (`VirtualAlloc`) — no hot-path heap
+- Adaptive TCP batch `flush_at` + reconnect backoff
+- Operator: NIO TCP+UDP, SPSC ring, seq gaps, `.zcm` record (`record=path.zcm`)

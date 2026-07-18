@@ -46,6 +46,18 @@ tasks.register<JavaExec>("golden") {
     mainClass.set("zcmesh.wire.WireFrameGolden")
 }
 
+tasks.register<JavaExec>("zcmRoundtrip") {
+    group = "verification"
+    description = "Java .zcm write/read roundtrip"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("zcmesh.wire.ZcmRoundtrip")
+}
+
+tasks.register("verifyAll") {
+    group = "verification"
+    dependsOn("golden", "zcmRoundtrip")
+}
+
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
 }

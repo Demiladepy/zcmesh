@@ -55,3 +55,6 @@ jobs:
       - name: Golden CRC
         run: .\gradlew.bat golden --no-daemon
         working-directory: operator-node
+      - name: ZCM roundtrip
+        run: .\gradlew.bat zcmRoundtrip --no-daemon
+        working-directory: operator-node
