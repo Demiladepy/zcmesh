@@ -68,9 +68,16 @@ tasks.register<JavaExec>("streamResync") {
     mainClass.set("zcmesh.net.StreamResyncCheck")
 }
 
+tasks.register<JavaExec>("meshControl") {
+    group = "verification"
+    description = "MeshControl encode/decode self-check"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("zcmesh.wire.MeshControlCheck")
+}
+
 tasks.register("verifyAll") {
     group = "verification"
-    dependsOn("golden", "zcmRoundtrip", "streamResync")
+    dependsOn("golden", "zcmRoundtrip", "streamResync", "meshControl")
 }
 
 tasks.withType<JavaCompile> {

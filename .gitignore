@@ -32,6 +32,7 @@ failover-cpp*
 tcp-cap*
 loss-*.txt
 prefhop-*.txt
+prefhop-cpp*
 zcmesh.hopskip
 rt-*.txt
 .DS_Store

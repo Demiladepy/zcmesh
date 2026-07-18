@@ -29,6 +29,9 @@ jobs:
       - name: Soak failover (C++ only)
         run: powershell -NoProfile -ExecutionPolicy Bypass -File ..\scripts\soak-failover-cpp.ps1 -Seconds 5 -Rate 400
         working-directory: core-engine
+      - name: Soak preferred-hop (C++ only)
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ..\scripts\soak-preferred-hop-cpp.ps1 -PhaseSec 3 -Rate 400
+        working-directory: core-engine
 
   core-linux:
     runs-on: ubuntu-latest
@@ -48,6 +51,9 @@ jobs:
         working-directory: core-engine
       - name: Soak failover (C++ only)
         run: bash ../scripts/soak-failover-cpp.sh 5 400
+        working-directory: core-engine
+      - name: Soak preferred-hop (C++ only)
+        run: bash ../scripts/soak-preferred-hop-cpp.sh 3 400
         working-directory: core-engine
 
   operator-node:
@@ -69,4 +75,7 @@ jobs:
         working-directory: operator-node
       - name: Stream resync
         run: .\gradlew.bat streamResync --no-daemon
+        working-directory: operator-node
+      - name: Mesh control encode
+        run: .\gradlew.bat meshControl --no-daemon
         working-directory: operator-node

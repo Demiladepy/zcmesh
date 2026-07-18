@@ -70,6 +70,7 @@ Transport: `auto` (TCP + mesh fallback with unsent-only failover), `tcp`, `udp` 
 .\scripts\soak-failover-cpp.ps1
 .\scripts\soak-loss.ps1
 .\scripts\soak-preferred-hop.ps1
+.\scripts\soak-preferred-hop-cpp.ps1
 ```
 
 ## Benchmark
@@ -90,9 +91,9 @@ Typical: **24 B** vs ~**67 B** JSON line, **~93%** encode CPU reduction.
 - `soak-failover.ps1`: UDP-only operator forces `auto` → mesh; asserts `mesh_failover>0`
 - `soak-loss.ps1`: hop `--loss-pct` → capture → `inspect --expect-gaps-min`
 - `soak-preferred-hop.ps1`: `zcmesh_ctl` SET_SKIP/CLEAR via edge `--control`
-- Live mesh control: 8-byte UDP `mesh_control.h` + `zcmesh_ctl`
-- Live `dups=` / `last_hop_pct` / hop_idx on operator stats
-- CI gates `soak-loss.ps1` + `soak-failover-cpp` (Win/Linux)
+- `soak-preferred-hop-cpp.ps1` / `.sh`: same without Java (CI-gated)
+- Java `ControlClient` / `MeshControl` mirrors C++ control plane
+- CI gates `soak-loss` + failover-cpp + preferred-hop-cpp (Win/Linux)
 - Capture `--mode udp|tcp|both` with TCP magic-scan resync
 - Inspect: per-node seq gaps, hop index / LAST_HOP, SUMMARY line
 - Replay: `--pace capture` (default) follows `timestamp_lo` deltas; `--rate` for fixed Hz
