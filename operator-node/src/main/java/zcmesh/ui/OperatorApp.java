@@ -57,7 +57,7 @@ public final class OperatorApp extends Application {
         receiverThread.start();
 
         rateLabel = new Label("frames/s: 0   bytes/s: 0");
-        statsLabel = new Label("ok: 0   crc_fail: 0   last_seq: -   queued: 0");
+        statsLabel = new Label("ok: 0   crc_fail: 0   gaps: 0   last_seq: -   queued: 0");
 
         TableView<NodeRow> table = new TableView<>(rows);
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
@@ -110,8 +110,8 @@ public final class OperatorApp extends Application {
                 batch++;
             }
             Platform.runLater(() -> statsLabel.setText(String.format(
-                    "ok: %d   crc_fail: %d   last_seq: %d   queued: %d",
-                    pipeline.framesOk(), pipeline.framesCrcFail(),
+                    "ok: %d   crc_fail: %d   gaps: %d   last_seq: %d   queued: %d",
+                    pipeline.framesOk(), pipeline.framesCrcFail(), pipeline.seqGaps(),
                     pipeline.lastSeq(), pipeline.queued())));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

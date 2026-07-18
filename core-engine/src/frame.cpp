@@ -34,19 +34,23 @@ uint32_t crc32(const void* data, std::size_t len, uint32_t seed) noexcept {
     return c ^ 0xFFFFFFFFu;
 }
 
+void pack_frame_into(zcmesh_wire_frame* out, const SensorSample& sample) noexcept {
+    out->magic = ZCMESH_WIRE_MAGIC;
+    out->version = ZCMESH_WIRE_VERSION;
+    out->flags = sample.flags;
+    out->seq = sample.seq;
+    out->timestamp_lo = static_cast<uint32_t>(sample.timestamp_ns & 0xFFFFFFFFu);
+    out->node_id = sample.node_id;
+    out->sensor_type = sample.sensor_type;
+    out->reserved = 0;
+    out->raw_value = sample.raw_value;
+    out->checksum = 0;
+    out->checksum = crc32(out, ZCMESH_CRC_PAYLOAD_LEN);
+}
+
 zcmesh_wire_frame* pack_frame(Arena& arena, const SensorSample& sample) {
     auto* frame = arena.alloc<zcmesh_wire_frame>();
-    frame->magic = ZCMESH_WIRE_MAGIC;
-    frame->version = ZCMESH_WIRE_VERSION;
-    frame->flags = sample.flags;
-    frame->seq = sample.seq;
-    frame->timestamp_lo = static_cast<uint32_t>(sample.timestamp_ns & 0xFFFFFFFFu);
-    frame->node_id = sample.node_id;
-    frame->sensor_type = sample.sensor_type;
-    frame->reserved = 0;
-    frame->raw_value = sample.raw_value;
-    frame->checksum = 0;
-    frame->checksum = crc32(frame, ZCMESH_CRC_PAYLOAD_LEN);
+    pack_frame_into(frame, sample);
     return frame;
 }
 
@@ -64,7 +68,6 @@ std::size_t nibble_pack_i32(const int32_t* values, std::size_t count, uint8_t* o
     }
     std::memset(out16, 0, 16);
     for (std::size_t i = 0; i < count; ++i) {
-        /* Store low 16 bits of each sample as two bytes (dense short path). */
         const uint16_t v = static_cast<uint16_t>(values[i] & 0xFFFF);
         out16[i * 2] = static_cast<uint8_t>(v & 0xFF);
         out16[i * 2 + 1] = static_cast<uint8_t>((v >> 8) & 0xFF);

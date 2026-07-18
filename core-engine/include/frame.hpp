@@ -19,13 +19,14 @@ struct SensorSample {
 
 uint32_t crc32(const void* data, std::size_t len, uint32_t seed = ZCMESH_CRC_SEED) noexcept;
 
+/* Pack into caller-owned storage (hot path: reuse arena slab / batch buffer). */
+void pack_frame_into(zcmesh_wire_frame* out, const SensorSample& sample) noexcept;
+
 /* Pack one sample into an arena-backed frame. Returns pointer into arena. */
 zcmesh_wire_frame* pack_frame(Arena& arena, const SensorSample& sample);
 
-/* Verify magic/version/CRC. Returns false on failure. */
 bool verify_frame(const zcmesh_wire_frame& frame) noexcept;
 
-/* Optional nibble-pack of up to 8 int32 values into 16 bytes (flags bit0). */
 std::size_t nibble_pack_i32(const int32_t* values, std::size_t count, uint8_t* out16) noexcept;
 
 } // namespace zcmesh

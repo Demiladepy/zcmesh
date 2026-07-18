@@ -1,0 +1,47 @@
+#include "batch.hpp"
+
+#include <cstring>
+
+namespace zcmesh {
+
+FrameBatch::FrameBatch(Arena& arena, std::size_t capacity_frames)
+    : frames_(nullptr), capacity_(capacity_frames), count_(0), send_offset_(0) {
+    frames_ = arena.alloc<zcmesh_wire_frame>(capacity_frames);
+    std::memset(frames_, 0, sizeof(zcmesh_wire_frame) * capacity_frames);
+}
+
+zcmesh_wire_frame* FrameBatch::push(const SensorSample& sample) {
+    if (full()) {
+        return nullptr;
+    }
+    zcmesh_wire_frame* slot = &frames_[count_++];
+    pack_frame_into(slot, sample);
+    return slot;
+}
+
+void FrameBatch::clear() noexcept {
+    count_ = 0;
+    send_offset_ = 0;
+}
+
+bool FrameBatch::flush_tcp(TcpClient& tcp) {
+    if (empty() || !tcp.connected()) {
+        return false;
+    }
+    const auto* ptr = reinterpret_cast<const char*>(frames_);
+    const std::size_t total = this->bytes();
+    while (send_offset_ < total) {
+        const int n = tcp.send_nb(ptr + send_offset_, total - send_offset_);
+        if (n < 0) {
+            return false;
+        }
+        if (n == 0) {
+            return false;
+        }
+        send_offset_ += static_cast<std::size_t>(n);
+    }
+    clear();
+    return true;
+}
+
+} // namespace zcmesh

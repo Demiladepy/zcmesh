@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(zcmesh_core STATIC
     src/arena.cpp
     src/frame.cpp
+    src/batch.cpp
     src/net.cpp
     src/router.cpp
 )
@@ -23,23 +24,26 @@ if(WIN32)
     target_compile_definitions(zcmesh_core PUBLIC _WIN32_WINNT=0x0601)
 endif()
 
-add_executable(zcmesh_edge src/main.cpp)
-target_link_libraries(zcmesh_edge PRIVATE zcmesh_core)
+function(zcmesh_bin name src)
+    add_executable(${name} ${src})
+    target_link_libraries(${name} PRIVATE zcmesh_core)
+    if(MSVC)
+        target_compile_options(${name} PRIVATE /W4)
+    else()
+        target_compile_options(${name} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endfunction()
 
-add_executable(zcmesh_bench src/bench.cpp)
-target_link_libraries(zcmesh_bench PRIVATE zcmesh_core)
-
-add_executable(zcmesh_hop src/hop.cpp)
-target_link_libraries(zcmesh_hop PRIVATE zcmesh_core)
+zcmesh_bin(zcmesh_edge src/main.cpp)
+zcmesh_bin(zcmesh_bench src/bench.cpp)
+zcmesh_bin(zcmesh_hop src/hop.cpp)
+zcmesh_bin(zcmesh_test_frame src/test_frame.cpp)
 
 if(MSVC)
     target_compile_options(zcmesh_core PRIVATE /W4)
-    target_compile_options(zcmesh_edge PRIVATE /W4)
-    target_compile_options(zcmesh_bench PRIVATE /W4)
-    target_compile_options(zcmesh_hop PRIVATE /W4)
 else()
     target_compile_options(zcmesh_core PRIVATE -Wall -Wextra -Wpedantic)
-    target_compile_options(zcmesh_edge PRIVATE -Wall -Wextra -Wpedantic)
-    target_compile_options(zcmesh_bench PRIVATE -Wall -Wextra -Wpedantic)
-    target_compile_options(zcmesh_hop PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+enable_testing()
+add_test(NAME frame_codec COMMAND zcmesh_test_frame)

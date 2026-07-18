@@ -1,4 +1,5 @@
 #include "arena.hpp"
+#include "batch.hpp"
 #include "frame.hpp"
 #include "net.hpp"
 #include "router.hpp"
@@ -6,6 +7,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -41,8 +43,9 @@ uint64_t monotonic_ns() {
 
 void usage(const char* argv0) {
     std::fprintf(stderr,
-                 "Usage: %s [--operator host:port] [--node-id N] [--rate Hz] [--file path] [--stdin]\n"
-                 "  Streams 24-byte ZCMesh frames to operator TCP; UDP mesh fallback hops configured in-process.\n",
+                 "Usage: %s [--operator host:port] [--node-id N] [--rate Hz] [--batch N]\n"
+                 "          [--file path] [--stdin]\n"
+                 "  Arena-backed batch TCP uplink; UDP mesh fallback on TCP failure.\n",
                  argv0);
 }
 
@@ -52,6 +55,7 @@ int main(int argc, char** argv) {
     const char* operator_ep = "127.0.0.1:9900";
     uint16_t node_id = 1;
     double rate_hz = 1000.0;
+    std::size_t batch_size = 32;
     const char* file_path = nullptr;
     bool use_stdin = false;
 
@@ -62,6 +66,11 @@ int main(int argc, char** argv) {
             node_id = static_cast<uint16_t>(std::atoi(argv[++i]));
         } else if (std::strcmp(argv[i], "--rate") == 0 && i + 1 < argc) {
             rate_hz = std::atof(argv[++i]);
+        } else if (std::strcmp(argv[i], "--batch") == 0 && i + 1 < argc) {
+            batch_size = static_cast<std::size_t>(std::strtoull(argv[++i], nullptr, 10));
+            if (batch_size == 0) {
+                batch_size = 1;
+            }
         } else if (std::strcmp(argv[i], "--file") == 0 && i + 1 < argc) {
             file_path = argv[++i];
         } else if (std::strcmp(argv[i], "--stdin") == 0) {
@@ -80,6 +89,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    /* Single arena for router + batch slab. Never reset on hot path. */
     constexpr std::size_t kArenaBytes = 4u * 1024u * 1024u;
     zcmesh::Arena arena(kArenaBytes);
 
@@ -90,7 +100,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    /* Deterministic fallback topology: primary mesh hop → secondary → operator UDP. */
     zcmesh::Endpoint hops[3]{};
     zcmesh::parse_endpoint("127.0.0.1:9901", hops[0]);
     zcmesh::parse_endpoint("127.0.0.1:9902", hops[1]);
@@ -98,6 +107,8 @@ int main(int argc, char** argv) {
 
     zcmesh::MeshRouter router(arena, 8);
     router.add_route(node_id, hops, 3);
+
+    zcmesh::FrameBatch batch(arena, batch_size);
 
     zcmesh::UdpSocket udp;
     if (!udp.open()) {
@@ -131,14 +142,11 @@ int main(int argc, char** argv) {
     auto next = std::chrono::steady_clock::now();
 
     std::fprintf(stderr,
-                 "zcmesh_edge node=%u rate=%.1fHz frame=%uB arena=%zuB (hardware-clock stream)\n",
-                 node_id, rate_hz, ZCMESH_WIRE_FRAME_SIZE, arena.capacity());
+                 "zcmesh_edge node=%u rate=%.1fHz batch=%zu frame=%uB arena=%zuB used=%zuB\n",
+                 node_id, rate_hz, batch_size, ZCMESH_WIRE_FRAME_SIZE,
+                 arena.capacity(), arena.used());
 
     while (true) {
-        if (arena.remaining() < ZCMESH_WIRE_FRAME_SIZE * 64) {
-            arena.reset();
-        }
-
         int32_t raw = 0;
         if (use_stdin) {
             if (!(std::cin >> raw)) {
@@ -149,7 +157,6 @@ int main(int argc, char** argv) {
                 break;
             }
         } else {
-            /* Deterministic hardware-timed waveform for soak / bench (not a mock API). */
             const double t = static_cast<double>(seq) / rate_hz;
             raw = static_cast<int32_t>(std::lround(1000.0 * std::sin(2.0 * 3.141592653589793 * 50.0 * t)));
         }
@@ -162,27 +169,56 @@ int main(int argc, char** argv) {
         sample.flags = ZCMESH_FLAG_LAST_HOP;
         sample.raw_value = raw;
 
-        zcmesh_wire_frame* frame = zcmesh::pack_frame(arena, sample);
-        const bool ok = router.deliver(udp, tcp, node_id, frame, ZCMESH_WIRE_FRAME_SIZE, true);
-        if (ok) {
-            ++sent_ok;
-        } else {
-            ++sent_fail;
-            if (!tcp.connected()) {
-                tcp.connect(op);
+        if (!batch.push(sample)) {
+            std::fprintf(stderr, "batch full unexpectedly\n");
+            break;
+        }
+
+        if (batch.full()) {
+            const std::size_t n = batch.count();
+            bool ok = false;
+            if (tcp.connected() && batch.flush_tcp(tcp)) {
+                ok = true;
+            } else {
+                const auto* frames = static_cast<const zcmesh_wire_frame*>(batch.data());
+                std::size_t forwarded = 0;
+                for (std::size_t i = 0; i < n; ++i) {
+                    if (router.forward_udp(udp, node_id, &frames[i], ZCMESH_WIRE_FRAME_SIZE)) {
+                        ++forwarded;
+                    }
+                }
+                batch.clear();
+                ok = forwarded == n;
+                if (!tcp.connected()) {
+                    tcp.connect(op);
+                }
+            }
+            if (ok) {
+                sent_ok += n;
+            } else {
+                sent_fail += n;
             }
         }
 
         if ((seq & 0x3FFu) == 0) {
-            std::fprintf(stderr, "seq=%u ok=%llu fail=%llu arena_used=%zu\n",
+            std::fprintf(stderr, "seq=%u ok=%llu fail=%llu\n",
                          seq,
                          static_cast<unsigned long long>(sent_ok),
-                         static_cast<unsigned long long>(sent_fail),
-                         arena.used());
+                         static_cast<unsigned long long>(sent_fail));
         }
 
         next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(period);
         std::this_thread::sleep_until(next);
+    }
+
+    if (!batch.empty()) {
+        if (!(tcp.connected() && batch.flush_tcp(tcp))) {
+            const auto* frames = static_cast<const zcmesh_wire_frame*>(batch.data());
+            for (std::size_t i = 0; i < batch.count(); ++i) {
+                router.forward_udp(udp, node_id, &frames[i], ZCMESH_WIRE_FRAME_SIZE);
+            }
+            batch.clear();
+        }
     }
 
     zcmesh::net_shutdown();

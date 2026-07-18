@@ -38,6 +38,9 @@ cmake --build build -j
 
 Binary: `core-engine/build/zcmesh_edge.exe` (MinGW) or `core-engine/build/Release/zcmesh_edge.exe` (MSVC).
 
+Also built: `zcmesh_bench`, `zcmesh_hop`, `zcmesh_test_frame` (`ctest` in build dir).
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the system design.
 ## Build — Java operator
 
 Requirements: JDK 17+, network for first Gradle dependency resolve.
@@ -62,7 +65,7 @@ Terminal 2 — edge (after operator is up):
 
 ```powershell
 cd core-engine\build
-.\zcmesh_edge.exe --operator 127.0.0.1:9900 --node-id 1 --rate 1000
+.\zcmesh_edge.exe --operator 127.0.0.1:9900 --node-id 1 --rate 1000 --batch 32
 ```
 
 Headless smoke (no JavaFX):
@@ -94,6 +97,7 @@ cd core-engine\build
 
 Reports bytes/frame and ns/op for arena binary pack vs a typical JSON telemetry line.
 
+Example (local): `24 B` vs `~67 B` payload, **~94%** encode CPU reduction.
 ## Mesh hop relay
 
 ```powershell
