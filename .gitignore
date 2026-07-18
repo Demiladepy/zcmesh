@@ -27,6 +27,7 @@ multi-*.txt
 cap-*.txt
 replay-*.txt
 soak-*.txt
+rt-*.txt
 .DS_Store
 Thumbs.db
 *.log
