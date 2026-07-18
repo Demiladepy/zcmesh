@@ -11,6 +11,7 @@ public final class TelemetryPipeline {
     private final LongAdder framesCrcFail = new LongAdder();
     private final LongAdder bytesIn = new LongAdder();
     private final LongAdder seqGaps = new LongAdder();
+    private final LongAdder uniqueNodes = new LongAdder();
     private final AtomicLong lastSeq = new AtomicLong(-1);
     private final AtomicLong[] lastSeqByNode = new AtomicLong[65536];
     private final AtomicLong lastOfferNs = new AtomicLong(0);
@@ -59,6 +60,7 @@ public final class TelemetryPipeline {
             synchronized (lastSeqByNode) {
                 if (lastSeqByNode[id] == null) {
                     lastSeqByNode[id] = created;
+                    uniqueNodes.increment();
                     return;
                 }
                 prev = lastSeqByNode[id];
@@ -101,6 +103,10 @@ public final class TelemetryPipeline {
 
     public long seqGaps() {
         return seqGaps.sum();
+    }
+
+    public long uniqueNodes() {
+        return uniqueNodes.sum();
     }
 
     public long lastSeq() {

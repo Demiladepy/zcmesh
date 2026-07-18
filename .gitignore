@@ -21,6 +21,12 @@ CMakeFiles/
 cmake_install.cmake
 Makefile
 compile_commands.json
-*.log
+*.zcm
+demo-*.txt
+multi-*.txt
+cap-*.txt
+replay-*.txt
+capture-demo.zcm
 .DS_Store
 Thumbs.db
+*.log

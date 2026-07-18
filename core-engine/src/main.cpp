@@ -22,7 +22,7 @@
 
 namespace {
 
-enum class Transport { Auto, Tcp, Udp };
+enum class Transport { Auto, Tcp, Udp, Mesh };
 
 uint64_t monotonic_ns() {
 #if defined(_WIN32)
@@ -46,13 +46,26 @@ uint64_t monotonic_ns() {
 void usage(const char* argv0) {
     std::fprintf(stderr,
                  "Usage: %s [--operator host:port] [--node-id N] [--rate Hz] [--batch N]\n"
-                 "          [--transport auto|tcp|udp] [--file path] [--stdin]\n"
-                 "  auto: batch TCP uplink, UDP mesh fallback; udp: mesh only; tcp: TCP only.\n",
+                 "          [--transport auto|tcp|udp|mesh] [--duration SEC] [--file path] [--stdin]\n"
+                 "  auto: TCP then mesh fallback; tcp: TCP only; udp: UDP to --operator; mesh: UDP hops only.\n",
                  argv0);
 }
 
-bool flush_udp(zcmesh::MeshRouter& router, zcmesh::UdpSocket& udp, uint16_t node_id,
-               zcmesh::FrameBatch& batch) {
+bool flush_udp_direct(zcmesh::UdpSocket& udp, const zcmesh::Endpoint& ep, zcmesh::FrameBatch& batch) {
+    const std::size_t n = batch.count();
+    const auto* frames = static_cast<const zcmesh_wire_frame*>(batch.data());
+    std::size_t forwarded = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        if (udp.send_to(ep, &frames[i], ZCMESH_WIRE_FRAME_SIZE)) {
+            ++forwarded;
+        }
+    }
+    batch.clear();
+    return forwarded == n;
+}
+
+bool flush_udp_mesh(zcmesh::MeshRouter& router, zcmesh::UdpSocket& udp, uint16_t node_id,
+                    zcmesh::FrameBatch& batch) {
     const std::size_t n = batch.count();
     const auto* frames = static_cast<const zcmesh_wire_frame*>(batch.data());
     std::size_t forwarded = 0;
@@ -75,6 +88,7 @@ int main(int argc, char** argv) {
     const char* file_path = nullptr;
     bool use_stdin = false;
     Transport transport = Transport::Auto;
+    double duration_sec = 0.0; /* 0 = run forever */
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--operator") == 0 && i + 1 < argc) {
@@ -94,12 +108,16 @@ int main(int argc, char** argv) {
                 transport = Transport::Tcp;
             } else if (std::strcmp(argv[i], "udp") == 0) {
                 transport = Transport::Udp;
+            } else if (std::strcmp(argv[i], "mesh") == 0) {
+                transport = Transport::Mesh;
             } else if (std::strcmp(argv[i], "auto") == 0) {
                 transport = Transport::Auto;
             } else {
                 usage(argv[0]);
                 return 1;
             }
+        } else if (std::strcmp(argv[i], "--duration") == 0 && i + 1 < argc) {
+            duration_sec = std::atof(argv[++i]);
         } else if (std::strcmp(argv[i], "--file") == 0 && i + 1 < argc) {
             file_path = argv[++i];
         } else if (std::strcmp(argv[i], "--stdin") == 0) {
@@ -146,7 +164,7 @@ int main(int argc, char** argv) {
     }
 
     zcmesh::TcpClient tcp;
-    if (transport != Transport::Udp) {
+    if (transport != Transport::Udp && transport != Transport::Mesh) {
         if (!tcp.connect(op)) {
             std::fprintf(stderr, "tcp connect to %s:%u failed\n", op.host, op.port);
             if (transport == Transport::Tcp) {
@@ -173,15 +191,24 @@ int main(int argc, char** argv) {
     uint64_t sent_ok = 0;
     uint64_t sent_fail = 0;
     auto next = std::chrono::steady_clock::now();
+    const auto start = next;
+    const bool timed = duration_sec > 0.0;
 
     const char* tname = transport == Transport::Tcp ? "tcp"
-                      : transport == Transport::Udp ? "udp" : "auto";
+                      : transport == Transport::Udp ? "udp"
+                      : transport == Transport::Mesh ? "mesh" : "auto";
     std::fprintf(stderr,
-                 "zcmesh_edge node=%u rate=%.1fHz batch=%zu transport=%s frame=%uB used=%zuB\n",
-                 node_id, rate_hz, batch_size, tname, ZCMESH_WIRE_FRAME_SIZE, arena.used());
+                 "zcmesh_edge node=%u rate=%.1fHz batch=%zu transport=%s duration=%.1fs frame=%uB\n",
+                 node_id, rate_hz, batch_size, tname, duration_sec, ZCMESH_WIRE_FRAME_SIZE);
 
     while (true) {
-        int32_t raw = 0;
+        if (timed) {
+            const double elapsed = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - start).count();
+            if (elapsed >= duration_sec) {
+                break;
+            }
+        }        int32_t raw = 0;
         if (use_stdin) {
             if (!(std::cin >> raw)) {
                 break;
@@ -212,7 +239,9 @@ int main(int argc, char** argv) {
             const std::size_t n = batch.count();
             bool ok = false;
             if (transport == Transport::Udp) {
-                ok = flush_udp(router, udp, node_id, batch);
+                ok = flush_udp_direct(udp, op, batch);
+            } else if (transport == Transport::Mesh) {
+                ok = flush_udp_mesh(router, udp, node_id, batch);
             } else if (transport == Transport::Tcp) {
                 ok = tcp.connected() && batch.flush_tcp(tcp);
                 if (!ok) {
@@ -225,7 +254,7 @@ int main(int argc, char** argv) {
                 if (tcp.connected() && batch.flush_tcp(tcp)) {
                     ok = true;
                 } else {
-                    ok = flush_udp(router, udp, node_id, batch);
+                    ok = flush_udp_mesh(router, udp, node_id, batch);
                     if (!tcp.connected()) {
                         tcp.connect(op);
                     }
@@ -251,12 +280,18 @@ int main(int argc, char** argv) {
 
     if (!batch.empty()) {
         if (transport == Transport::Udp) {
-            flush_udp(router, udp, node_id, batch);
+            flush_udp_direct(udp, op, batch);
+        } else if (transport == Transport::Mesh) {
+            flush_udp_mesh(router, udp, node_id, batch);
         } else if (!(tcp.connected() && batch.flush_tcp(tcp))) {
-            flush_udp(router, udp, node_id, batch);
+            flush_udp_mesh(router, udp, node_id, batch);
         }
     }
 
+    std::fprintf(stderr, "zcmesh_edge done seq=%u ok=%llu fail=%llu\n",
+                 seq,
+                 static_cast<unsigned long long>(sent_ok),
+                 static_cast<unsigned long long>(sent_fail));
     zcmesh::net_shutdown();
     return 0;
 }

@@ -23,9 +23,9 @@ public final class HeadlessOperator {
         while (System.nanoTime() < deadline) {
             long ok = pipeline.framesOk();
             if (ok >= minFrames) {
-                System.out.printf("SMOKE_OK frames=%d crc_fail=%d gaps=%d last_seq=%d bytes=%d%n",
+                System.out.printf("SMOKE_OK frames=%d crc_fail=%d gaps=%d nodes=%d last_seq=%d bytes=%d%n",
                         ok, pipeline.framesCrcFail(), pipeline.seqGaps(),
-                        pipeline.lastSeq(), pipeline.bytesIn());
+                        pipeline.uniqueNodes(), pipeline.lastSeq(), pipeline.bytesIn());
                 receiver.stop();
                 System.exit(0);
             }

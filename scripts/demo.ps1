@@ -1,4 +1,4 @@
-# Local mesh path: operator UDP <- hop(9901) <- edge(--transport udp)
+# Local mesh path: operator UDP <- hop(9901) <- edge(--transport mesh)
 # Optional: -LossPct 5 to inject deterministic drops (operator shows gaps).
 param(
     [int]$LossPct = 0,
@@ -55,9 +55,9 @@ Write-Host "Starting hop 9901 -> 9900 (loss_pct=$LossPct)"
 $hopArgs = @("--listen", "127.0.0.1:9901", "--forward", "127.0.0.1:9900", "--loss-pct", "$LossPct")
 $hop = Start-Process -FilePath $Hop -ArgumentList $hopArgs -RedirectStandardError $hopErr -PassThru
 
-Write-Host "Starting edge transport=udp rate=$Rate"
+Write-Host "Starting edge transport=mesh rate=$Rate"
 $edge = Start-Process -FilePath $Edge `
-    -ArgumentList @("--operator", "127.0.0.1:9900", "--transport", "udp", "--rate", "$Rate", "--batch", "8") `
+    -ArgumentList @("--operator", "127.0.0.1:9900", "--transport", "mesh", "--rate", "$Rate", "--batch", "8") `
     -RedirectStandardError $edgeErr -PassThru
 
 Wait-Process -Id $smoke.Id -Timeout ($Seconds + 30) -ErrorAction SilentlyContinue

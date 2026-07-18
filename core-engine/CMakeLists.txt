@@ -38,6 +38,8 @@ zcmesh_bin(zcmesh_edge src/main.cpp)
 zcmesh_bin(zcmesh_bench src/bench.cpp)
 zcmesh_bin(zcmesh_hop src/hop.cpp)
 zcmesh_bin(zcmesh_test_frame src/test_frame.cpp)
+zcmesh_bin(zcmesh_capture src/capture.cpp)
+zcmesh_bin(zcmesh_replay src/replay.cpp)
 
 if(MSVC)
     target_compile_options(zcmesh_core PRIVATE /W4)
