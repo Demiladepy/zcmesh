@@ -48,7 +48,7 @@ void usage(const char* argv0) {
     std::fprintf(stderr,
                  "Usage: %s [--operator host:port] [--node-id N] [--rate Hz] [--batch N]\n"
                  "          [--transport auto|tcp|udp|mesh] [--duration SEC] [--drop-pct N]\n"
-                 "          [--file path] [--stdin]\n"
+                 "          [--print-stats-sec N] [--file path] [--stdin]\n"
                  "  Adaptive TCP batching + exponential reconnect. --drop-pct injects local loss.\n",
                  argv0);
 }
@@ -153,6 +153,7 @@ int main(int argc, char** argv) {
     Transport transport = Transport::Auto;
     double duration_sec = 0.0;
     int drop_pct = 0;
+    double print_stats_sec = 0.0;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--operator") == 0 && i + 1 < argc) {
@@ -184,6 +185,8 @@ int main(int argc, char** argv) {
             duration_sec = std::atof(argv[++i]);
         } else if (std::strcmp(argv[i], "--drop-pct") == 0 && i + 1 < argc) {
             drop_pct = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--print-stats-sec") == 0 && i + 1 < argc) {
+            print_stats_sec = std::atof(argv[++i]);
         } else if (std::strcmp(argv[i], "--file") == 0 && i + 1 < argc) {
             file_path = argv[++i];
         } else if (std::strcmp(argv[i], "--stdin") == 0) {
@@ -255,9 +258,16 @@ int main(int argc, char** argv) {
     uint64_t sent_ok = 0;
     uint64_t sent_fail = 0;
     uint64_t dropped = 0;
+    uint64_t prev_ok = 0;
     auto next = std::chrono::steady_clock::now();
     const auto start = next;
+    auto next_stats = start;
     const bool timed = duration_sec > 0.0;
+    const bool stats_tick = print_stats_sec > 0.0;
+    if (stats_tick) {
+        next_stats += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::duration<double>(print_stats_sec));
+    }
 
     const char* tname = transport == Transport::Tcp ? "tcp"
                       : transport == Transport::Udp ? "udp"
@@ -354,6 +364,22 @@ int main(int argc, char** argv) {
                          static_cast<unsigned long long>(sent_fail),
                          static_cast<unsigned long long>(dropped),
                          batch.flush_at());
+        }
+
+        if (stats_tick && std::chrono::steady_clock::now() >= next_stats) {
+            const uint64_t delta = sent_ok - prev_ok;
+            const double fps = static_cast<double>(delta) / print_stats_sec;
+            const double bps = fps * static_cast<double>(ZCMESH_WIRE_FRAME_SIZE);
+            std::fprintf(stderr,
+                         "stats fps=%.0f bytes_s=%.0f ok=%llu fail=%llu drop=%llu flush_at=%zu\n",
+                         fps, bps,
+                         static_cast<unsigned long long>(sent_ok),
+                         static_cast<unsigned long long>(sent_fail),
+                         static_cast<unsigned long long>(dropped),
+                         batch.flush_at());
+            prev_ok = sent_ok;
+            next_stats += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::duration<double>(print_stats_sec));
         }
 
         next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(period);

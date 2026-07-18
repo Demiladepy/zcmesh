@@ -30,6 +30,16 @@ public final class WireFrameGolden {
         if (f.timestampLo != 0x55667788L) {
             fail("timestamp");
         }
+        ByteBuffer enc = ByteBuffer.allocate(WireFrame.SIZE).order(ByteOrder.LITTLE_ENDIAN);
+        f.encode(enc);
+        enc.flip();
+        byte[] round = new byte[WireFrame.SIZE];
+        enc.get(round);
+        for (int i = 0; i < WireFrame.SIZE; i++) {
+            if (round[i] != raw[i]) {
+                fail("encode mismatch at " + i);
+            }
+        }
         System.out.println("WireFrameGolden: OK");
     }
 
