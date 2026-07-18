@@ -1,5 +1,6 @@
 package zcmesh.net;
 
+import zcmesh.pipeline.MetricsSampler;
 import zcmesh.pipeline.TelemetryPipeline;
 
 import java.io.IOException;
@@ -15,16 +16,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Side-channel metrics: TCP connect → one plaintext snapshot → close.
- * No HTTP — usable from curl/nc for live bench demos.
  */
 public final class StatsServer implements Runnable {
     private final int port;
-    private final TelemetryPipeline pipeline;
+    private final MetricsSampler sampler;
     private final AtomicBoolean running = new AtomicBoolean(true);
 
     public StatsServer(int port, TelemetryPipeline pipeline) {
         this.port = port;
-        this.pipeline = pipeline;
+        this.sampler = new MetricsSampler(pipeline);
+    }
+
+    public StatsServer(int port, MetricsSampler sampler) {
+        this.port = port;
+        this.sampler = sampler;
     }
 
     public void stop() {
@@ -55,7 +60,8 @@ public final class StatsServer implements Runnable {
                             continue;
                         }
                         ch.configureBlocking(false);
-                        ByteBuffer buf = ByteBuffer.wrap(snapshot().getBytes(StandardCharsets.US_ASCII));
+                        ByteBuffer buf = ByteBuffer.wrap(
+                                sampler.snapshot().toPlainText().getBytes(StandardCharsets.US_ASCII));
                         ch.register(selector, SelectionKey.OP_WRITE, buf);
                     } else if (key.isWritable()) {
                         SocketChannel ch = (SocketChannel) key.channel();
@@ -73,18 +79,5 @@ public final class StatsServer implements Runnable {
                 e.printStackTrace(System.err);
             }
         }
-    }
-
-    private String snapshot() {
-        return "zcmesh_stats 1\n"
-                + "frames_ok=" + pipeline.framesOk() + "\n"
-                + "crc_fail=" + pipeline.framesCrcFail() + "\n"
-                + "gaps=" + pipeline.seqGaps() + "\n"
-                + "nodes=" + pipeline.uniqueNodes() + "\n"
-                + "bytes=" + pipeline.bytesIn() + "\n"
-                + "queued=" + pipeline.queued() + "\n"
-                + "last_seq=" + pipeline.lastSeq() + "\n"
-                + "ia_ewma_ns=" + pipeline.interArrivalEwmaNs() + "\n"
-                + "ring_drops=" + pipeline.ringDrops() + "\n";
     }
 }

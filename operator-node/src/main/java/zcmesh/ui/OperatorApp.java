@@ -2,6 +2,10 @@ package zcmesh.ui;
 
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.beans.property.IntegerProperty;
+import javafx.beans.property.LongProperty;
+import javafx.beans.property.SimpleIntegerProperty;
+import javafx.beans.property.SimpleLongProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
@@ -9,18 +13,12 @@ import javafx.scene.Scene;
 import javafx.scene.control.Label;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
-import javafx.beans.property.IntegerProperty;
-import javafx.beans.property.LongProperty;
-import javafx.beans.property.SimpleIntegerProperty;
-import javafx.beans.property.SimpleLongProperty;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
-import zcmesh.net.FrameReceiver;
-import zcmesh.net.StatsServer;
-import zcmesh.pipeline.TelemetryPipeline;
-import zcmesh.wire.WireFrame;
-import zcmesh.wire.ZcmWriter;
+import zcmesh.operator.OperatorRuntime;
+import zcmesh.pipeline.NodeState;
+import zcmesh.pipeline.OperatorSnapshot;
 
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -30,22 +28,17 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Thin structural shell over OperatorRuntime. Swap this later for a richer UI
+ * without rewriting receive/stats/pipeline.
+ */
 public final class OperatorApp extends Application {
     private static final int DEFAULT_PORT = 9900;
 
-    private TelemetryPipeline pipeline;
-    private FrameReceiver receiver;
-    private StatsServer statsServer;
-    private Thread receiverThread;
-    private Thread statsThread;
+    private OperatorRuntime runtime;
     private ScheduledExecutorService ticker;
-    private long prevOk;
-    private long prevBytes;
-    private long prevTs;
-
     private Label rateLabel;
     private Label statsLabel;
-    private ZcmWriter recorder;
     private final ObservableList<NodeRow> rows = FXCollections.observableArrayList();
     private final Map<Integer, NodeRow> byNode = new HashMap<>();
 
@@ -62,24 +55,11 @@ public final class OperatorApp extends Application {
             }
         }
 
-        if (recordPath != null) {
-            recorder = new ZcmWriter(recordPath);
-            System.err.println("recording to " + recordPath);
-        }
-
-        pipeline = new TelemetryPipeline(8192);
-        receiver = new FrameReceiver(port, pipeline);
-        statsServer = new StatsServer(port + 9, pipeline);
-        receiverThread = new Thread(receiver, "frame-receiver");
-        statsThread = new Thread(statsServer, "stats-server");
-        receiverThread.setDaemon(true);
-        statsThread.setDaemon(true);
-        receiverThread.start();
-        statsThread.start();
-        System.err.println("stats side-channel on " + (port + 9));
+        runtime = new OperatorRuntime(port, 8192, recordPath);
+        runtime.start();
 
         rateLabel = new Label("frames/s: 0   bytes/s: 0");
-        statsLabel = new Label("ok: 0   crc_fail: 0   gaps: 0   last_seq: -   queued: 0");
+        statsLabel = new Label("ok: 0   crc_fail: 0   gaps: 0   drops: 0   last_seq: -   queued: 0");
 
         TableView<NodeRow> table = new TableView<>(rows);
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
@@ -101,7 +81,6 @@ public final class OperatorApp extends Application {
 
         VBox top = new VBox(6, rateLabel, statsLabel);
         top.setPadding(new Insets(10));
-
         BorderPane root = new BorderPane();
         root.setTop(top);
         root.setCenter(table);
@@ -110,99 +89,65 @@ public final class OperatorApp extends Application {
         stage.setScene(new Scene(root, 720, 420));
         stage.show();
 
-        prevTs = System.nanoTime();
         ticker = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "pipeline-tick");
+            Thread t = new Thread(r, "ui-tick");
             t.setDaemon(true);
             return t;
         });
         ticker.scheduleAtFixedRate(this::tick, 0, 50, TimeUnit.MILLISECONDS);
         ticker.scheduleAtFixedRate(this::refreshRates, 1, 1, TimeUnit.SECONDS);
-
         stage.setOnCloseRequest(e -> shutdown());
     }
 
     private void tick() {
         try {
-            WireFrame f;
-            int batch = 0;
-            while (batch < 256 && (f = pipeline.poll(0)) != null) {
-                final WireFrame frame = f;
-                if (recorder != null) {
-                    try {
-                        recorder.write(frame);
-                    } catch (Exception ex) {
-                        ex.printStackTrace(System.err);
-                    }
+            runtime.drainToRecorder(512);
+            List<NodeState> nodes = runtime.pipeline().latestNodesSnapshot();
+            Platform.runLater(() -> {
+                for (NodeState n : nodes) {
+                    upsert(n);
                 }
-                Platform.runLater(() -> upsert(frame));
-                batch++;
-            }
-            Platform.runLater(() -> statsLabel.setText(String.format(
-                    "ok: %d   crc_fail: %d   gaps: %d   drops: %d   last_seq: %d   queued: %d   ia_ewma_us: %.0f",
-                    pipeline.framesOk(), pipeline.framesCrcFail(), pipeline.seqGaps(),
-                    pipeline.ringDrops(), pipeline.lastSeq(), pipeline.queued(),
-                    pipeline.interArrivalEwmaNs() / 1000.0)));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            });
+        } catch (Exception e) {
+            e.printStackTrace(System.err);
         }
     }
 
-    private void upsert(WireFrame frame) {
-        NodeRow row = byNode.get(frame.nodeId);
+    private void upsert(NodeState n) {
+        NodeRow row = byNode.get(n.nodeId);
         if (row == null) {
-            row = new NodeRow(frame.nodeId, frame.seq, frame.sensorType, frame.rawValue, frame.timestampLo);
-            byNode.put(frame.nodeId, row);
+            row = new NodeRow(n.nodeId, n.seq, n.sensorType, n.rawValue, n.timestampLo);
+            byNode.put(n.nodeId, row);
             rows.add(row);
         } else {
-            row.setSeq(frame.seq);
-            row.setSensorType(frame.sensorType);
-            row.setRawValue(frame.rawValue);
-            row.setTimestampLo(frame.timestampLo);
+            row.setSeq(n.seq);
+            row.setSensorType(n.sensorType);
+            row.setRawValue(n.rawValue);
+            row.setTimestampLo(n.timestampLo);
         }
     }
 
     private void refreshRates() {
-        long now = System.nanoTime();
-        long ok = pipeline.framesOk();
-        long bytes = pipeline.bytesIn();
-        double dt = (now - prevTs) / 1_000_000_000.0;
-        if (dt <= 0) {
-            return;
-        }
-        double fps = (ok - prevOk) / dt;
-        double bps = (bytes - prevBytes) / dt;
-        prevOk = ok;
-        prevBytes = bytes;
-        prevTs = now;
-        Platform.runLater(() -> rateLabel.setText(String.format(
-                "frames/s: %.0f   bytes/s: %.0f", fps, bps)));
+        OperatorSnapshot s = runtime.sampler().snapshot();
+        Platform.runLater(() -> {
+            rateLabel.setText(String.format("frames/s: %.0f   bytes/s: %.0f", s.framesPerSec, s.bytesPerSec));
+            statsLabel.setText(String.format(
+                    "ok: %d   crc_fail: %d   gaps: %d   drops: %d   last_seq: %d   queued: %d   ia_ewma_us: %.0f",
+                    s.framesOk, s.crcFail, s.gaps, s.ringDrops, s.lastSeq, s.queued, s.iaEwmaNs / 1000.0));
+        });
     }
 
     private void shutdown() {
-        if (receiver != null) {
-            receiver.stop();
-        }
-        if (statsServer != null) {
-            statsServer.stop();
-        }
         if (ticker != null) {
             ticker.shutdownNow();
         }
-        if (receiverThread != null) {
-            receiverThread.interrupt();
-        }
-        if (statsThread != null) {
-            statsThread.interrupt();
-        }
-        if (recorder != null) {
+        if (runtime != null) {
             try {
-                System.err.println("closing record frames=" + recorder.frameCount());
-                recorder.close();
+                runtime.close();
             } catch (Exception ex) {
                 ex.printStackTrace(System.err);
             }
-            recorder = null;
+            runtime = null;
         }
     }
 

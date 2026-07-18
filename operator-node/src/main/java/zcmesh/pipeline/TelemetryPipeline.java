@@ -2,11 +2,16 @@ package zcmesh.pipeline;
 
 import zcmesh.wire.WireFrame;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 public final class TelemetryPipeline {
     private final FrameRing ring;
+    private final ConcurrentHashMap<Integer, NodeState> latestByNode = new ConcurrentHashMap<>();
     private final LongAdder framesOk = new LongAdder();
     private final LongAdder framesCrcFail = new LongAdder();
     private final LongAdder bytesIn = new LongAdder();
@@ -16,7 +21,6 @@ public final class TelemetryPipeline {
     private final AtomicLong[] lastSeqByNode = new AtomicLong[65536];
     private final AtomicLong lastOfferNs = new AtomicLong(0);
     private final AtomicLong interArrivalEwmaNs = new AtomicLong(0);
-    private final LongAdder interArrivalSamples = new LongAdder();
 
     public TelemetryPipeline(int ringCapacityPow2) {
         this.ring = new FrameRing(ringCapacityPow2);
@@ -32,6 +36,9 @@ public final class TelemetryPipeline {
         trackInterArrival();
         framesOk.increment();
         lastSeq.set(frame.seq);
+        long now = System.nanoTime();
+        latestByNode.put(frame.nodeId, new NodeState(
+                frame.nodeId, frame.seq, frame.sensorType, frame.rawValue, frame.timestampLo, now));
         ring.offer(frame);
     }
 
@@ -46,10 +53,8 @@ public final class TelemetryPipeline {
         if (ewma == 0) {
             interArrivalEwmaNs.set(delta);
         } else {
-            /* alpha ~= 1/16 */
             interArrivalEwmaNs.set(ewma - (ewma >> 4) + (delta >> 4));
         }
-        interArrivalSamples.increment();
     }
 
     private void trackGaps(WireFrame frame) {
@@ -87,6 +92,19 @@ public final class TelemetryPipeline {
             Thread.sleep(1);
         }
         return null;
+    }
+
+    /** Non-consuming view of latest per-node state (for UI tables). */
+    public Collection<NodeState> latestNodes() {
+        return latestByNode.values();
+    }
+
+    public List<NodeState> latestNodesSnapshot() {
+        return new ArrayList<>(latestByNode.values());
+    }
+
+    public NodeState latestNode(int nodeId) {
+        return latestByNode.get(nodeId);
     }
 
     public long framesOk() {

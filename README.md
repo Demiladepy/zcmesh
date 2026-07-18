@@ -81,3 +81,4 @@ Typical: **24 B** vs ~**67 B** JSON line, **~93%** encode CPU reduction.
 - Arena (`VirtualAlloc`) — no hot-path heap
 - Adaptive TCP batch `flush_at` + reconnect backoff
 - Operator: NIO TCP+UDP, SPSC ring, seq gaps, `.zcm` record (`record=path.zcm`)
+- Future UI binds to `OperatorRuntime` / `OperatorSnapshot` / `NodeState` (no receive rewrite)
