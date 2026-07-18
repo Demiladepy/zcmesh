@@ -66,6 +66,7 @@ Transport: `auto` (TCP + mesh fallback with unsent-only failover), `tcp`, `udp` 
 .\scripts\demo-multinode.ps1
 .\scripts\demo-replay.ps1
 .\scripts\soak.ps1
+.\scripts\soak-failover.ps1
 ```
 
 ## Benchmark
@@ -81,6 +82,8 @@ Typical: **24 B** vs ~**67 B** JSON line, **~93%** encode CPU reduction.
 - Arena (`VirtualAlloc`) — no hot-path heap
 - Adaptive TCP batch `flush_at` + reconnect backoff
 - Auto transport: mesh only the unsent TCP suffix; operator TCP magic-scan resync
-- Mesh preferred-hop probe (~500 ms) + route fail counters in `--print-stats-sec`
+- Mesh preferred-hop probe (~500 ms) + `hop_ok` / failover counters in `--print-stats-sec`
+- Hop stamps `reserved` (hop index) and `--final` sets `LAST_HOP` + CRC rewrite
+- `soak-failover.ps1`: UDP-only operator forces `auto` → mesh; asserts `mesh_failover>0`
 - Operator: NIO TCP+UDP, SPSC ring, seq gaps, `.zcm` record (`record=path.zcm`)
 - Future UI binds to `OperatorRuntime` / `OperatorSnapshot` / `NodeState` (no receive rewrite)

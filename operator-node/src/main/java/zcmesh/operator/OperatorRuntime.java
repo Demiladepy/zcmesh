@@ -26,11 +26,16 @@ public final class OperatorRuntime implements AutoCloseable {
     private final int statsPort;
 
     public OperatorRuntime(int telemetryPort, int ringPow2, Path recordPath) throws IOException {
+        this(telemetryPort, ringPow2, recordPath, true);
+    }
+
+    public OperatorRuntime(int telemetryPort, int ringPow2, Path recordPath, boolean tcpEnabled)
+            throws IOException {
         this.telemetryPort = telemetryPort;
         this.statsPort = telemetryPort + 9;
         this.pipeline = new TelemetryPipeline(ringPow2);
         this.sampler = new MetricsSampler(pipeline);
-        this.receiver = new FrameReceiver(telemetryPort, pipeline);
+        this.receiver = new FrameReceiver(telemetryPort, pipeline, tcpEnabled);
         this.stats = new StatsServer(statsPort, sampler);
         this.recorder = recordPath != null ? new ZcmWriter(recordPath) : null;
         this.rxThread = new Thread(receiver, "frame-receiver");

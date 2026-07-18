@@ -51,13 +51,14 @@ if (-not $ready) {
     exit 1
 }
 
-Write-Host "Starting hop 9901 -> 9900 (loss_pct=$LossPct)"
-$hopArgs = @("--listen", "127.0.0.1:9901", "--forward", "127.0.0.1:9900", "--loss-pct", "$LossPct")
+Write-Host "Starting hop 9901 -> 9900 (loss_pct=$LossPct, final)"
+$hopArgs = @("--listen", "127.0.0.1:9901", "--forward", "127.0.0.1:9900", "--loss-pct", "$LossPct", "--final")
 $hop = Start-Process -FilePath $Hop -ArgumentList $hopArgs -RedirectStandardError $hopErr -PassThru
 
-Write-Host "Starting edge transport=mesh rate=$Rate"
+Write-Host "Starting edge transport=mesh --hop 127.0.0.1:9901 rate=$Rate"
 $edge = Start-Process -FilePath $Edge `
-    -ArgumentList @("--operator", "127.0.0.1:9900", "--transport", "mesh", "--rate", "$Rate", "--batch", "8") `
+    -ArgumentList @("--operator", "127.0.0.1:9900", "--transport", "mesh", "--hop", "127.0.0.1:9901",
+                    "--rate", "$Rate", "--batch", "8", "--duration", "$Seconds") `
     -RedirectStandardError $edgeErr -PassThru
 
 Wait-Process -Id $smoke.Id -Timeout ($Seconds + 30) -ErrorAction SilentlyContinue

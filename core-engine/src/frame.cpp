@@ -42,7 +42,7 @@ void pack_frame_into(zcmesh_wire_frame* out, const SensorSample& sample) noexcep
     out->timestamp_lo = static_cast<uint32_t>(sample.timestamp_ns & 0xFFFFFFFFu);
     out->node_id = sample.node_id;
     out->sensor_type = sample.sensor_type;
-    out->reserved = 0;
+    out->reserved = sample.reserved;
     out->raw_value = sample.raw_value;
     out->checksum = 0;
     out->checksum = crc32(out, ZCMESH_CRC_PAYLOAD_LEN);
@@ -60,6 +60,22 @@ bool verify_frame(const zcmesh_wire_frame& frame) noexcept {
     }
     const uint32_t expect = crc32(&frame, ZCMESH_CRC_PAYLOAD_LEN);
     return expect == frame.checksum;
+}
+
+void apply_hop_stamp(zcmesh_wire_frame* frame, bool final_hop) noexcept {
+    if (!frame) {
+        return;
+    }
+    if (frame->reserved < 255u) {
+        ++frame->reserved;
+    }
+    if (final_hop) {
+        frame->flags = static_cast<uint8_t>(frame->flags | ZCMESH_FLAG_LAST_HOP);
+    } else {
+        frame->flags = static_cast<uint8_t>(frame->flags & ~ZCMESH_FLAG_LAST_HOP);
+    }
+    frame->checksum = 0;
+    frame->checksum = crc32(frame, ZCMESH_CRC_PAYLOAD_LEN);
 }
 
 std::size_t nibble_pack_i32(const int32_t* values, std::size_t count, uint8_t* out16) noexcept {

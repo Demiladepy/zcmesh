@@ -13,6 +13,9 @@ public final class WireFrame {
     public static final int SIZE = 24;
     public static final int CRC_PAYLOAD_LEN = 20;
 
+    public static final int FLAG_NIBBLE_PACK = 0x01;
+    public static final int FLAG_LAST_HOP = 0x02;
+
     public static final int OFF_MAGIC = 0;
     public static final int OFF_VERSION = 2;
     public static final int OFF_FLAGS = 3;

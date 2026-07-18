@@ -164,7 +164,7 @@ bool TcpClient::connect(const Endpoint& ep) {
         fd_set wfds;
         FD_ZERO(&wfds);
         FD_SET(fd_, &wfds);
-        timeval tv{2, 0};
+        timeval tv{0, 50000}; /* 50ms — refuse/fail fast; backoff spaces retries */
         const int sel = select(0, nullptr, &wfds, nullptr, &tv);
         if (sel > 0 && FD_ISSET(fd_, &wfds)) {
             int so_error = 0;
@@ -185,7 +185,7 @@ bool TcpClient::connect(const Endpoint& ep) {
         fd_set wfds;
         FD_ZERO(&wfds);
         FD_SET(fd_, &wfds);
-        timeval tv{2, 0};
+        timeval tv{0, 50000}; /* 50ms */
         const int sel = select(fd_ + 1, nullptr, &wfds, nullptr, &tv);
         if (sel > 0 && FD_ISSET(fd_, &wfds)) {
             int so_error = 0;

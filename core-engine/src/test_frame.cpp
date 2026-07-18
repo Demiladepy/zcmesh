@@ -71,6 +71,23 @@ int main() {
     expect(zcmesh::verify_frame(*heapish), "arena frame crc");
     expect(heapish->checksum == stack.checksum, "arena matches stack crc");
 
+    {
+        zcmesh_wire_frame hop = stack;
+        hop.flags = 0;
+        hop.reserved = 0;
+        hop.checksum = 0;
+        hop.checksum = zcmesh::crc32(&hop, ZCMESH_CRC_PAYLOAD_LEN);
+        expect(zcmesh::verify_frame(hop), "pre-stamp crc");
+        zcmesh::apply_hop_stamp(&hop, true);
+        expect(hop.reserved == 1, "hop index 1");
+        expect((hop.flags & ZCMESH_FLAG_LAST_HOP) != 0, "last hop set");
+        expect(zcmesh::verify_frame(hop), "post-stamp crc");
+        zcmesh::apply_hop_stamp(&hop, false);
+        expect(hop.reserved == 2, "hop index 2");
+        expect((hop.flags & ZCMESH_FLAG_LAST_HOP) == 0, "last hop cleared");
+        expect(zcmesh::verify_frame(hop), "second stamp crc");
+    }
+
     uint8_t packed[16];
     int32_t vals[4] = {1, 2, 3, 4};
     expect(zcmesh::nibble_pack_i32(vals, 4, packed) == 8, "nibble pack len");

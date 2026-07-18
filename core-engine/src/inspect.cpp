@@ -79,9 +79,10 @@ int main(int argc, char** argv) {
             }
         }
         if (verbose && (i < 5 || i + 1 == hdr.frame_count)) {
-            std::printf("frame[%llu] seq=%u node=%u sensor=%u raw=%d\n",
+            std::printf("frame[%llu] seq=%u node=%u sensor=%u raw=%d hop=%u last=%d\n",
                         static_cast<unsigned long long>(i), frame.seq, frame.node_id,
-                        frame.sensor_type, frame.raw_value);
+                        frame.sensor_type, frame.raw_value, frame.reserved,
+                        (frame.flags & ZCMESH_FLAG_LAST_HOP) ? 1 : 0);
         }
     }
     std::fclose(f);

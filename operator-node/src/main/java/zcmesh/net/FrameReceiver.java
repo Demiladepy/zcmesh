@@ -20,15 +20,22 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Dual-path receiver: non-blocking TCP stream + UDP datagrams on the same port.
  * TCP path scans for wire magic after desync (partial-send / mid-frame reconnect).
+ * tcpEnabled=false binds UDP only (forces edge auto → mesh failover in soaks).
  */
 public final class FrameReceiver implements Runnable {
     private final int port;
     private final TelemetryPipeline pipeline;
+    private final boolean tcpEnabled;
     private final AtomicBoolean running = new AtomicBoolean(true);
 
     public FrameReceiver(int port, TelemetryPipeline pipeline) {
+        this(port, pipeline, true);
+    }
+
+    public FrameReceiver(int port, TelemetryPipeline pipeline, boolean tcpEnabled) {
         this.port = port;
         this.pipeline = pipeline;
+        this.tcpEnabled = tcpEnabled;
     }
 
     public void stop() {
@@ -38,12 +45,15 @@ public final class FrameReceiver implements Runnable {
     @Override
     public void run() {
         try (Selector selector = Selector.open();
-             ServerSocketChannel server = ServerSocketChannel.open();
              DatagramChannel udp = DatagramChannel.open(StandardProtocolFamily.INET)) {
 
-            server.configureBlocking(false);
-            server.bind(new InetSocketAddress(port));
-            server.register(selector, SelectionKey.OP_ACCEPT);
+            ServerSocketChannel server = null;
+            if (tcpEnabled) {
+                server = ServerSocketChannel.open();
+                server.configureBlocking(false);
+                server.bind(new InetSocketAddress(port));
+                server.register(selector, SelectionKey.OP_ACCEPT);
+            }
 
             udp.configureBlocking(false);
             udp.setOption(StandardSocketOptions.SO_REUSEADDR, true);
@@ -51,7 +61,8 @@ public final class FrameReceiver implements Runnable {
             ByteBuffer udpBuf = ByteBuffer.allocateDirect(64 * 1024);
             udp.register(selector, SelectionKey.OP_READ, udpBuf);
 
-            System.err.println("FrameReceiver TCP+UDP listening on " + port);
+            System.err.println("FrameReceiver " + (tcpEnabled ? "TCP+UDP" : "UDP-only")
+                    + " listening on " + port);
 
             while (running.get()) {
                 selector.select(250);
@@ -62,7 +73,7 @@ public final class FrameReceiver implements Runnable {
                     if (!key.isValid()) {
                         continue;
                     }
-                    if (key.isAcceptable()) {
+                    if (key.isAcceptable() && server != null) {
                         accept(server, selector);
                     } else if (key.isReadable()) {
                         if (key.channel() instanceof DatagramChannel) {
@@ -72,6 +83,9 @@ public final class FrameReceiver implements Runnable {
                         }
                     }
                 }
+            }
+            if (server != null) {
+                server.close();
             }
         } catch (IOException e) {
             if (running.get()) {

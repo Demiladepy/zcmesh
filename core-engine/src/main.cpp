@@ -118,9 +118,15 @@ struct ReconnectGate {
     }
 };
 
+struct FlushStats {
+    uint64_t mesh_failover = 0;
+    uint64_t tcp_partial_abort = 0;
+    uint64_t mesh_rescue_frames = 0;
+};
+
 bool flush_batch(Transport transport, zcmesh::FrameBatch& batch, zcmesh::TcpClient& tcp,
                  zcmesh::UdpSocket& udp, zcmesh::MeshRouter& router, const zcmesh::Endpoint& op,
-                 uint16_t node_id, ReconnectGate& gate) {
+                 uint16_t node_id, ReconnectGate& gate, FlushStats& stats) {
     const uint64_t t0 = monotonic_ns();
     bool ok = false;
     if (transport == Transport::Udp) {
@@ -139,10 +145,14 @@ bool flush_batch(Transport transport, zcmesh::FrameBatch& batch, zcmesh::TcpClie
         } else {
             batch.adapt(false, monotonic_ns() - t0);
             const bool had_partial = batch.has_partial_send();
+            const std::size_t rescue = batch.unsent_count();
+            ++stats.mesh_failover;
+            stats.mesh_rescue_frames += rescue;
             /* Only mesh-forward frames TCP did not fully drain (avoids dup of sent prefix). */
             ok = flush_udp_mesh(router, udp, node_id, batch);
             if (had_partial && tcp.connected()) {
                 tcp.close(); /* abandon mid-frame TCP stream; reconnect clean */
+                ++stats.tcp_partial_abort;
             }
         }
     }
@@ -288,6 +298,7 @@ int main(int argc, char** argv) {
     uint64_t sent_fail = 0;
     uint64_t dropped = 0;
     uint64_t prev_ok = 0;
+    FlushStats flush_stats{};
     auto next = std::chrono::steady_clock::now();
     const auto start = next;
     auto next_stats = start;
@@ -316,7 +327,8 @@ int main(int argc, char** argv) {
 
         if (batch.should_flush() || batch.has_partial_send() || batch.full()) {
             const std::size_t n = batch.count();
-            const bool ok = flush_batch(transport, batch, tcp, udp, router, op, node_id, gate);
+            const bool ok = flush_batch(transport, batch, tcp, udp, router, op, node_id, gate,
+                                        flush_stats);
             if (ok) {
                 sent_ok += n;
             } else if (batch.empty()) {
@@ -367,7 +379,11 @@ int main(int argc, char** argv) {
         sample.timestamp_ns = monotonic_ns();
         sample.node_id = node_id;
         sample.sensor_type = sensor;
-        sample.flags = ZCMESH_FLAG_LAST_HOP;
+        /* Direct TCP/UDP uplink is last hop; mesh/auto leave LAST_HOP for hop --final. */
+        sample.flags = (transport == Transport::Tcp || transport == Transport::Udp)
+                           ? ZCMESH_FLAG_LAST_HOP
+                           : 0;
+        sample.reserved = 0;
         sample.raw_value = raw;
 
         if (!batch.push(sample)) {
@@ -376,7 +392,8 @@ int main(int argc, char** argv) {
 
         if (batch.should_flush() || batch.full()) {
             const std::size_t n = batch.count();
-            const bool ok = flush_batch(transport, batch, tcp, udp, router, op, node_id, gate);
+            const bool ok = flush_batch(transport, batch, tcp, udp, router, op, node_id, gate,
+                                        flush_stats);
             if (ok) {
                 sent_ok += n;
             } else if (!batch.empty()) {
@@ -400,16 +417,26 @@ int main(int argc, char** argv) {
             const double fps = static_cast<double>(delta) / print_stats_sec;
             const double bps = fps * static_cast<double>(ZCMESH_WIRE_FRAME_SIZE);
             const zcmesh::RouteEntry* route = router.find(node_id);
+            const uint64_t hop0 = route ? route->hop_ok[0] : 0;
+            const uint64_t hop1 = route ? route->hop_ok[1] : 0;
+            const uint64_t hop2 = route ? route->hop_ok[2] : 0;
             std::fprintf(stderr,
                          "stats fps=%.0f bytes_s=%.0f ok=%llu fail=%llu drop=%llu flush_at=%zu"
-                         " hop=%u route_fail=%llu\n",
+                         " hop=%u route_fail=%llu hop_ok=%llu/%llu/%llu"
+                         " mesh_failover=%llu tcp_abort=%llu rescue=%llu\n",
                          fps, bps,
                          static_cast<unsigned long long>(sent_ok),
                          static_cast<unsigned long long>(sent_fail),
                          static_cast<unsigned long long>(dropped),
                          batch.flush_at(),
                          route ? static_cast<unsigned>(route->active_hop) : 0u,
-                         route ? static_cast<unsigned long long>(route->fails) : 0ull);
+                         route ? static_cast<unsigned long long>(route->fails) : 0ull,
+                         static_cast<unsigned long long>(hop0),
+                         static_cast<unsigned long long>(hop1),
+                         static_cast<unsigned long long>(hop2),
+                         static_cast<unsigned long long>(flush_stats.mesh_failover),
+                         static_cast<unsigned long long>(flush_stats.tcp_partial_abort),
+                         static_cast<unsigned long long>(flush_stats.mesh_rescue_frames));
             prev_ok = sent_ok;
             next_stats += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                 std::chrono::duration<double>(print_stats_sec));
@@ -420,14 +447,19 @@ int main(int argc, char** argv) {
     }
 
     if (!batch.empty()) {
-        flush_batch(transport, batch, tcp, udp, router, op, node_id, gate);
+        flush_batch(transport, batch, tcp, udp, router, op, node_id, gate, flush_stats);
     }
 
-    std::fprintf(stderr, "zcmesh_edge done seq=%u ok=%llu fail=%llu drop=%llu\n",
+    std::fprintf(stderr,
+                 "zcmesh_edge done seq=%u ok=%llu fail=%llu drop=%llu"
+                 " mesh_failover=%llu tcp_abort=%llu rescue=%llu\n",
                  seq,
                  static_cast<unsigned long long>(sent_ok),
                  static_cast<unsigned long long>(sent_fail),
-                 static_cast<unsigned long long>(dropped));
+                 static_cast<unsigned long long>(dropped),
+                 static_cast<unsigned long long>(flush_stats.mesh_failover),
+                 static_cast<unsigned long long>(flush_stats.tcp_partial_abort),
+                 static_cast<unsigned long long>(flush_stats.mesh_rescue_frames));
     zcmesh::net_shutdown();
     return 0;
 }

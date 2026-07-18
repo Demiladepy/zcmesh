@@ -14,6 +14,7 @@ struct SensorSample {
     uint16_t node_id;
     uint8_t  sensor_type;
     uint8_t  flags;
+    uint8_t  reserved; /* hop index; 0 at edge */
     int32_t  raw_value;
 };
 
@@ -26,6 +27,9 @@ void pack_frame_into(zcmesh_wire_frame* out, const SensorSample& sample) noexcep
 zcmesh_wire_frame* pack_frame(Arena& arena, const SensorSample& sample);
 
 bool verify_frame(const zcmesh_wire_frame& frame) noexcept;
+
+/* Increment hop index; set/clear LAST_HOP; recompute CRC. */
+void apply_hop_stamp(zcmesh_wire_frame* frame, bool final_hop) noexcept;
 
 std::size_t nibble_pack_i32(const int32_t* values, std::size_t count, uint8_t* out16) noexcept;
 

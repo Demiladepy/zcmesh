@@ -35,7 +35,15 @@ tasks.register<JavaExec>("smoke") {
         project.findProperty("smokeFrames")?.toString() ?: "200",
         project.findProperty("smokeTimeout")?.toString() ?: "60"
     )
-    project.findProperty("smokeRecord")?.toString()?.let { smokeArgs.add(it) }
+    val smokeRecord = project.findProperty("smokeRecord")?.toString()
+    val smokeUdpOnly = project.findProperty("smokeUdpOnly")?.toString() == "true"
+    when {
+        smokeRecord != null -> smokeArgs.add(smokeRecord)
+        smokeUdpOnly -> smokeArgs.add("-")
+    }
+    if (smokeUdpOnly) {
+        smokeArgs.add("udp")
+    }
     args(smokeArgs)
 }
 

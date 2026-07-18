@@ -15,7 +15,7 @@ extern "C" {
  *  timestamp_lo  u32  @8   low 32 bits of monotonic ns
  *  node_id       u16  @12
  *  sensor_type   u8   @14
- *  reserved      u8   @15
+ *  reserved      u8   @15  hop index (0 at edge; incremented per mesh hop)
  *  raw_value     i32  @16
  *  checksum      u32  @20  CRC32 of first 20 bytes
  */
@@ -25,7 +25,7 @@ extern "C" {
 #define ZCMESH_WIRE_FRAME_SIZE  24u
 
 #define ZCMESH_FLAG_NIBBLE_PACK 0x01u
-#define ZCMESH_FLAG_LAST_HOP    0x02u
+#define ZCMESH_FLAG_LAST_HOP    0x02u  /* set only on the final hop (or direct uplink) */
 
 #define ZCMESH_OFF_MAGIC        0u
 #define ZCMESH_OFF_VERSION      2u

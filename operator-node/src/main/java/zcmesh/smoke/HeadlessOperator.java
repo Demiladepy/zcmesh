@@ -7,17 +7,24 @@ import java.nio.file.Path;
 
 /**
  * Headless soak — uses OperatorRuntime (same core as future UI).
- * Args: [port] [minFrames] [timeoutSec] [record.zcm]
+ * Args: [port] [minFrames] [timeoutSec] [record.zcm|-] [udp|tcp]
  */
 public final class HeadlessOperator {
     public static void main(String[] args) throws Exception {
         int port = args.length > 0 ? Integer.parseInt(args[0]) : 9900;
         long minFrames = args.length > 1 ? Long.parseLong(args[1]) : 100;
         int timeoutSec = args.length > 2 ? Integer.parseInt(args[2]) : 30;
-        Path recordPath = args.length > 3 ? Path.of(args[3]) : null;
+        Path recordPath = null;
+        if (args.length > 3 && !args[3].equals("-") && !args[3].isEmpty()) {
+            recordPath = Path.of(args[3]);
+        }
+        boolean tcpEnabled = true;
+        if (args.length > 4 && args[4].equalsIgnoreCase("udp")) {
+            tcpEnabled = false;
+        }
 
         int exitCode = 1;
-        try (OperatorRuntime runtime = new OperatorRuntime(port, 8192, recordPath)) {
+        try (OperatorRuntime runtime = new OperatorRuntime(port, 8192, recordPath, tcpEnabled)) {
             runtime.start();
             long deadline = System.nanoTime() + timeoutSec * 1_000_000_000L;
             while (System.nanoTime() < deadline) {
