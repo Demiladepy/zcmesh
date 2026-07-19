@@ -47,3 +47,5 @@ rt-*.txt
 .DS_Store
 Thumbs.db
 *.log
+
+stat-*.txt
