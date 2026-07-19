@@ -35,6 +35,8 @@ prefhop-*.txt
 prefhop-cpp*
 serial-*.txt
 opctl-*.txt
+e2e-*.txt
+stress-*.txt
 zcmesh.hopskip
 rt-*.txt
 .DS_Store

@@ -94,3 +94,22 @@ jobs:
       - name: Mesh control encode
         run: .\gradlew.bat meshControl --no-daemon
         working-directory: operator-node
+
+  e2e-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Configure core
+        run: cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+        working-directory: core-engine
+      - name: Build core
+        run: cmake --build build -j
+        working-directory: core-engine
+      - name: Operator e2e (edge → Java smoke)
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\ci-operator-e2e.ps1 -Seconds 6 -Rate 400 -MinFrames 80
+      - name: Multi-edge stress (moderate)
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\soak-multiedge.ps1 -Seconds 6 -Rate 800 -Nodes 3
