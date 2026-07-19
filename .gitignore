@@ -33,6 +33,8 @@ tcp-cap*
 loss-*.txt
 prefhop-*.txt
 prefhop-cpp*
+serial-*.txt
+opctl-*.txt
 zcmesh.hopskip
 rt-*.txt
 .DS_Store

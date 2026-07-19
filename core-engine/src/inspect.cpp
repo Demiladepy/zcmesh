@@ -10,7 +10,9 @@ namespace {
 
 void usage(const char* a0) {
     std::fprintf(stderr,
-                 "Usage: %s path.zcm [--verbose] [--expect-gaps-min N] [--expect-gaps-max N]\n"
+                 "Usage: %s path.zcm [--verbose]\n"
+                 "          [--expect-gaps-min N] [--expect-gaps-max N]\n"
+                 "          [--expect-hop-idx N] [--expect-last-hop-min-pct P]\n"
                  "  Offline .zcm report: CRC, per-node seq gaps, hop index / LAST_HOP.\n",
                  a0);
 }
@@ -26,6 +28,8 @@ int main(int argc, char** argv) {
     bool verbose = false;
     int64_t expect_gaps_min = -1;
     int64_t expect_gaps_max = -1;
+    int expect_hop_idx = -1;
+    double expect_last_hop_min_pct = -1.0;
     for (int i = 2; i < argc; ++i) {
         if (std::strcmp(argv[i], "--verbose") == 0) {
             verbose = true;
@@ -33,6 +37,10 @@ int main(int argc, char** argv) {
             expect_gaps_min = std::atoll(argv[++i]);
         } else if (std::strcmp(argv[i], "--expect-gaps-max") == 0 && i + 1 < argc) {
             expect_gaps_max = std::atoll(argv[++i]);
+        } else if (std::strcmp(argv[i], "--expect-hop-idx") == 0 && i + 1 < argc) {
+            expect_hop_idx = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--expect-last-hop-min-pct") == 0 && i + 1 < argc) {
+            expect_last_hop_min_pct = std::atof(argv[++i]);
         } else {
             usage(argv[0]);
             return 1;
@@ -134,6 +142,24 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "expect-gaps-max %lld exceeded (gaps=%llu)\n",
                      static_cast<long long>(expect_gaps_max),
                      static_cast<unsigned long long>(gaps));
+        return 1;
+    }
+    if (expect_hop_idx >= 0) {
+        if (expect_hop_idx > 15) {
+            std::fprintf(stderr, "expect-hop-idx out of range\n");
+            return 1;
+        }
+        const uint64_t at = stats.hop.hop_hist[expect_hop_idx];
+        if (at != stats.ok || stats.ok == 0) {
+            std::fprintf(stderr, "expect-hop-idx %d not exclusive (count=%llu ok=%llu)\n",
+                         expect_hop_idx, static_cast<unsigned long long>(at),
+                         static_cast<unsigned long long>(stats.ok));
+            return 1;
+        }
+    }
+    if (expect_last_hop_min_pct >= 0.0 && last_pct + 1e-9 < expect_last_hop_min_pct) {
+        std::fprintf(stderr, "expect-last-hop-min-pct %.1f not met (got %.1f)\n",
+                     expect_last_hop_min_pct, last_pct);
         return 1;
     }
     return 0;

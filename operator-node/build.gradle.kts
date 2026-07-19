@@ -75,6 +75,13 @@ tasks.register<JavaExec>("meshControl") {
     mainClass.set("zcmesh.wire.MeshControlCheck")
 }
 
+tasks.register<JavaExec>("controlCli") {
+    group = "verification"
+    description = "Send SET_SKIP/CLEAR via ControlClient (use --args=...)"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("zcmesh.net.ControlCli")
+}
+
 tasks.register("verifyAll") {
     group = "verification"
     dependsOn("golden", "zcmRoundtrip", "streamResync", "meshControl")

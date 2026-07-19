@@ -32,6 +32,9 @@ jobs:
       - name: Soak preferred-hop (C++ only)
         run: powershell -NoProfile -ExecutionPolicy Bypass -File ..\scripts\soak-preferred-hop-cpp.ps1 -PhaseSec 3 -Rate 400
         working-directory: core-engine
+      - name: Serial 2-hop stamp demo
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ..\scripts\demo-serial-hop.ps1 -Seconds 5 -Rate 400
+        working-directory: core-engine
 
   core-linux:
     runs-on: ubuntu-latest
@@ -54,6 +57,9 @@ jobs:
         working-directory: core-engine
       - name: Soak preferred-hop (C++ only)
         run: bash ../scripts/soak-preferred-hop-cpp.sh 3 400
+        working-directory: core-engine
+      - name: Serial 2-hop stamp demo
+        run: bash ../scripts/demo-serial-hop.sh 5 400
         working-directory: core-engine
 
   operator-node:
