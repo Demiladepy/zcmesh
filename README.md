@@ -73,6 +73,7 @@ Transport: `auto` (TCP + mesh fallback with unsent-only failover), `tcp`, `udp` 
 .\scripts\soak-preferred-hop.ps1
 .\scripts\soak-preferred-hop-cpp.ps1
 .\scripts\soak-operator-control.ps1
+.\scripts\soak-capture-tcp.ps1
 ```
 
 ## Benchmark
@@ -95,12 +96,12 @@ Typical: **24 B** vs ~**67 B** JSON line, **~93%** encode CPU reduction.
 - `soak-preferred-hop.ps1`: `zcmesh_ctl` SET_SKIP/CLEAR via edge `--control`
 - `soak-preferred-hop-cpp.ps1` / `.sh`: same without Java (CI-gated)
 - Java `ControlClient` / `MeshControl` mirrors C++ control plane
-- CI gates `soak-loss` + failover-cpp + preferred-hop-cpp (Win/Linux)
+- CI gates loss + failover-cpp + preferred-hop-cpp + serial-hop + TCP capture (Win/Linux)
 - Capture `--mode udp|tcp|both` streams frames to disk (header rewritten on exit)
 - `OperatorRuntime.control()` / `setHopSkip` / `clearHopSkip` for mesh control
 - `ControlCli` / `soak-operator-control.ps1`: Java ControlClient drives hop demote/recover
 - `demo-serial-hop`: edge → hop0 → hop1(--final) → capture; inspect `--expect-hop-idx 2`
 - Inspect: per-node seq gaps, hop index / LAST_HOP, SUMMARY; `--expect-hop-idx` / `--expect-last-hop-min-pct`
 - Replay: `--pace capture` (default) follows `timestamp_lo` deltas; `--rate` for fixed Hz
+- Operator UI: live node table with hop/last + hop histogram rates (binds `OperatorRuntime`)
 - Operator: NIO TCP+UDP, SPSC ring, seq gaps, `.zcm` record (`record=path.zcm`)
-- Future UI binds to `OperatorRuntime` / `OperatorSnapshot` / `NodeState` (no receive rewrite)

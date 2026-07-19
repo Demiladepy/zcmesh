@@ -35,6 +35,9 @@ jobs:
       - name: Serial 2-hop stamp demo
         run: powershell -NoProfile -ExecutionPolicy Bypass -File ..\scripts\demo-serial-hop.ps1 -Seconds 5 -Rate 400
         working-directory: core-engine
+      - name: Soak TCP capture
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ..\scripts\soak-capture-tcp.ps1 -Seconds 5 -Rate 400
+        working-directory: core-engine
 
   core-linux:
     runs-on: ubuntu-latest
@@ -52,6 +55,9 @@ jobs:
       - name: Bench
         run: ./build/zcmesh_bench 200000
         working-directory: core-engine
+      - name: Soak loss (inspect gaps)
+        run: bash ../scripts/soak-loss.sh 15 4 400 3
+        working-directory: core-engine
       - name: Soak failover (C++ only)
         run: bash ../scripts/soak-failover-cpp.sh 5 400
         working-directory: core-engine
@@ -60,6 +66,9 @@ jobs:
         working-directory: core-engine
       - name: Serial 2-hop stamp demo
         run: bash ../scripts/demo-serial-hop.sh 5 400
+        working-directory: core-engine
+      - name: Soak TCP capture
+        run: bash ../scripts/soak-capture-tcp.sh 5 400
         working-directory: core-engine
 
   operator-node:

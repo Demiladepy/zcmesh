@@ -50,7 +50,8 @@ public final class TelemetryPipeline {
         lastSeq.set(frame.seq);
         long now = System.nanoTime();
         latestByNode.put(frame.nodeId, new NodeState(
-                frame.nodeId, frame.seq, frame.sensorType, frame.rawValue, frame.timestampLo, now));
+                frame.nodeId, frame.seq, frame.sensorType, frame.rawValue, frame.timestampLo,
+                frame.reserved & 0xFF, (frame.flags & WireFrame.FLAG_LAST_HOP) != 0, now));
         ring.offer(frame);
     }
 

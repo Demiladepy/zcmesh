@@ -59,7 +59,7 @@ public final class OperatorApp extends Application {
         runtime.start();
 
         rateLabel = new Label("frames/s: 0   bytes/s: 0");
-        statsLabel = new Label("ok: 0   crc_fail: 0   gaps: 0   drops: 0   last_seq: -   queued: 0");
+        statsLabel = new Label("ok: 0   crc: 0   gaps: 0   hops: -   last_seq: -");
 
         TableView<NodeRow> table = new TableView<>(rows);
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
@@ -71,12 +71,18 @@ public final class OperatorApp extends Application {
         cType.setCellValueFactory(c -> c.getValue().sensorTypeProperty());
         TableColumn<NodeRow, Number> cVal = new TableColumn<>("raw");
         cVal.setCellValueFactory(c -> c.getValue().rawValueProperty());
+        TableColumn<NodeRow, Number> cHop = new TableColumn<>("hop");
+        cHop.setCellValueFactory(c -> c.getValue().hopIdxProperty());
+        TableColumn<NodeRow, Number> cLast = new TableColumn<>("last");
+        cLast.setCellValueFactory(c -> c.getValue().lastHopProperty());
         TableColumn<NodeRow, Number> cTs = new TableColumn<>("ts_lo");
         cTs.setCellValueFactory(c -> c.getValue().timestampLoProperty());
         table.getColumns().add(cNode);
         table.getColumns().add(cSeq);
         table.getColumns().add(cType);
         table.getColumns().add(cVal);
+        table.getColumns().add(cHop);
+        table.getColumns().add(cLast);
         table.getColumns().add(cTs);
 
         VBox top = new VBox(6, rateLabel, statsLabel);
@@ -116,7 +122,7 @@ public final class OperatorApp extends Application {
     private void upsert(NodeState n) {
         NodeRow row = byNode.get(n.nodeId);
         if (row == null) {
-            row = new NodeRow(n.nodeId, n.seq, n.sensorType, n.rawValue, n.timestampLo);
+            row = new NodeRow(n.nodeId, n.seq, n.sensorType, n.rawValue, n.timestampLo, n.hopIdx, n.lastHop);
             byNode.put(n.nodeId, row);
             rows.add(row);
         } else {
@@ -124,6 +130,8 @@ public final class OperatorApp extends Application {
             row.setSensorType(n.sensorType);
             row.setRawValue(n.rawValue);
             row.setTimestampLo(n.timestampLo);
+            row.setHopIdx(n.hopIdx);
+            row.setLastHop(n.lastHop ? 1 : 0);
         }
     }
 
@@ -132,9 +140,11 @@ public final class OperatorApp extends Application {
         Platform.runLater(() -> {
             rateLabel.setText(String.format("frames/s: %.0f   bytes/s: %.0f", s.framesPerSec, s.bytesPerSec));
             statsLabel.setText(String.format(
-                    "ok: %d  crc: %d  gaps: %d  dups: %d  drops: %d  V/I/T: %d/%d/%d  seq: %d  q: %d",
+                    "ok: %d  crc: %d  gaps: %d  dups: %d  drops: %d  V/I/T: %d/%d/%d  "
+                            + "hop0/1/2+: %d/%d/%d  last_hop: %.0f%%  seq: %d  q: %d",
                     s.framesOk, s.crcFail, s.gaps, s.dups, s.ringDrops,
                     s.sensorVoltage, s.sensorCurrent, s.sensorTemp,
+                    s.hopIdx0, s.hopIdx1, s.hopIdx2Plus, s.lastHopPct(),
                     s.lastSeq, s.queued));
         });
     }
@@ -168,13 +178,18 @@ public final class OperatorApp extends Application {
         private final IntegerProperty sensorType = new SimpleIntegerProperty();
         private final IntegerProperty rawValue = new SimpleIntegerProperty();
         private final LongProperty timestampLo = new SimpleLongProperty();
+        private final IntegerProperty hopIdx = new SimpleIntegerProperty();
+        private final IntegerProperty lastHop = new SimpleIntegerProperty();
 
-        public NodeRow(int nodeId, long seq, int sensorType, int rawValue, long timestampLo) {
+        public NodeRow(int nodeId, long seq, int sensorType, int rawValue, long timestampLo,
+                       int hopIdx, boolean lastHop) {
             this.nodeId.set(nodeId);
             this.seq.set(seq);
             this.sensorType.set(sensorType);
             this.rawValue.set(rawValue);
             this.timestampLo.set(timestampLo);
+            this.hopIdx.set(hopIdx);
+            this.lastHop.set(lastHop ? 1 : 0);
         }
 
         public IntegerProperty nodeIdProperty() { return nodeId; }
@@ -182,10 +197,14 @@ public final class OperatorApp extends Application {
         public IntegerProperty sensorTypeProperty() { return sensorType; }
         public IntegerProperty rawValueProperty() { return rawValue; }
         public LongProperty timestampLoProperty() { return timestampLo; }
+        public IntegerProperty hopIdxProperty() { return hopIdx; }
+        public IntegerProperty lastHopProperty() { return lastHop; }
 
         public void setSeq(long v) { seq.set(v); }
         public void setSensorType(int v) { sensorType.set(v); }
         public void setRawValue(int v) { rawValue.set(v); }
         public void setTimestampLo(long v) { timestampLo.set(v); }
+        public void setHopIdx(int v) { hopIdx.set(v); }
+        public void setLastHop(int v) { lastHop.set(v); }
     }
 }
