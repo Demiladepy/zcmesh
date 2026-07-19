@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 namespace {
 
@@ -13,8 +14,33 @@ void usage(const char* a0) {
                  "Usage: %s path.zcm [--verbose]\n"
                  "          [--expect-gaps-min N] [--expect-gaps-max N]\n"
                  "          [--expect-hop-idx N] [--expect-last-hop-min-pct P]\n"
-                 "  Offline .zcm report: CRC, per-node seq gaps, hop index / LAST_HOP.\n",
+                 "          [--expect-frames-min N] [--expect-raws v0,v1,...]\n"
+                 "  Offline .zcm report: CRC, per-node seq gaps, hop index / LAST_HOP.\n"
+                 "  --expect-raws checks the first N verified frames' raw_value (in order).\n",
                  a0);
+}
+
+bool parse_raws(const char* s, std::vector<int32_t>& out) {
+    out.clear();
+    if (!s || !*s) {
+        return false;
+    }
+    const char* p = s;
+    while (*p) {
+        char* end = nullptr;
+        const long v = std::strtol(p, &end, 10);
+        if (end == p) {
+            return false;
+        }
+        out.push_back(static_cast<int32_t>(v));
+        p = end;
+        if (*p == ',') {
+            ++p;
+        } else if (*p != '\0') {
+            return false;
+        }
+    }
+    return !out.empty();
 }
 
 } // namespace
@@ -30,6 +56,8 @@ int main(int argc, char** argv) {
     int64_t expect_gaps_max = -1;
     int expect_hop_idx = -1;
     double expect_last_hop_min_pct = -1.0;
+    int64_t expect_frames_min = -1;
+    std::vector<int32_t> expect_raws;
     for (int i = 2; i < argc; ++i) {
         if (std::strcmp(argv[i], "--verbose") == 0) {
             verbose = true;
@@ -41,6 +69,13 @@ int main(int argc, char** argv) {
             expect_hop_idx = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--expect-last-hop-min-pct") == 0 && i + 1 < argc) {
             expect_last_hop_min_pct = std::atof(argv[++i]);
+        } else if (std::strcmp(argv[i], "--expect-frames-min") == 0 && i + 1 < argc) {
+            expect_frames_min = std::atoll(argv[++i]);
+        } else if (std::strcmp(argv[i], "--expect-raws") == 0 && i + 1 < argc) {
+            if (!parse_raws(argv[++i], expect_raws)) {
+                std::fprintf(stderr, "bad --expect-raws\n");
+                return 1;
+            }
         } else {
             usage(argv[0]);
             return 1;
@@ -65,6 +100,8 @@ int main(int argc, char** argv) {
     }
 
     zcmesh::ZcmAnalyze stats{};
+    std::vector<int32_t> seen_raws;
+    seen_raws.reserve(static_cast<std::size_t>(hdr.frame_count));
     for (uint64_t i = 0; i < hdr.frame_count; ++i) {
         zcmesh_wire_frame frame{};
         if (std::fread(&frame, 1, sizeof(frame), f) != sizeof(frame)) {
@@ -77,6 +114,7 @@ int main(int argc, char** argv) {
             continue;
         }
         stats.observe(frame);
+        seen_raws.push_back(frame.raw_value);
         if (verbose && (i < 5 || i + 1 == hdr.frame_count)) {
             std::printf("frame[%llu] seq=%u node=%u sensor=%u raw=%d hop=%u last=%d\n",
                         static_cast<unsigned long long>(i), frame.seq, frame.node_id,
@@ -121,7 +159,6 @@ int main(int argc, char** argv) {
                         static_cast<unsigned long long>(stats.hop.hop_hist[h]));
         }
     }
-    /* Machine-readable one-liner for scripts. */
     std::printf("SUMMARY frames=%llu crc_fail=%llu gaps=%llu dups=%llu nodes=%zu last_hop_pct=%.1f\n",
                 static_cast<unsigned long long>(stats.ok),
                 static_cast<unsigned long long>(stats.crc_fail),
@@ -161,6 +198,26 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "expect-last-hop-min-pct %.1f not met (got %.1f)\n",
                      expect_last_hop_min_pct, last_pct);
         return 1;
+    }
+    if (expect_frames_min >= 0 && static_cast<int64_t>(stats.ok) < expect_frames_min) {
+        std::fprintf(stderr, "expect-frames-min %lld not met (frames=%llu)\n",
+                     static_cast<long long>(expect_frames_min),
+                     static_cast<unsigned long long>(stats.ok));
+        return 1;
+    }
+    if (!expect_raws.empty()) {
+        if (seen_raws.size() < expect_raws.size()) {
+            std::fprintf(stderr, "expect-raws need %zu frames (got %zu)\n",
+                         expect_raws.size(), seen_raws.size());
+            return 1;
+        }
+        for (std::size_t i = 0; i < expect_raws.size(); ++i) {
+            if (seen_raws[i] != expect_raws[i]) {
+                std::fprintf(stderr, "expect-raws[%zu] want %d got %d\n", i, expect_raws[i],
+                             seen_raws[i]);
+                return 1;
+            }
+        }
     }
     return 0;
 }

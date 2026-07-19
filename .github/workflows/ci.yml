@@ -38,6 +38,15 @@ jobs:
       - name: Soak TCP capture
         run: powershell -NoProfile -ExecutionPolicy Bypass -File ..\scripts\soak-capture-tcp.ps1 -Seconds 5 -Rate 400
         working-directory: core-engine
+      - name: Soak file-source samples
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ..\scripts\soak-file-source.ps1 -Rate 200 -CapSeconds 4
+        working-directory: core-engine
+      - name: Soak capture both
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ..\scripts\soak-capture-both.ps1 -Seconds 5 -Rate 400
+        working-directory: core-engine
+      - name: Soak replay cpp roundtrip
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ..\scripts\soak-replay-cpp.ps1 -Seconds 4 -Rate 400
+        working-directory: core-engine
 
   core-linux:
     runs-on: ubuntu-latest
@@ -69,6 +78,15 @@ jobs:
         working-directory: core-engine
       - name: Soak TCP capture
         run: bash ../scripts/soak-capture-tcp.sh 5 400
+        working-directory: core-engine
+      - name: Soak file-source samples
+        run: bash ../scripts/soak-file-source.sh 200 4
+        working-directory: core-engine
+      - name: Soak capture both
+        run: bash ../scripts/soak-capture-both.sh 5 400
+        working-directory: core-engine
+      - name: Soak replay cpp roundtrip
+        run: bash ../scripts/soak-replay-cpp.sh 4 400
         working-directory: core-engine
 
   operator-node:

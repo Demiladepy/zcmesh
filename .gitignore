@@ -37,6 +37,11 @@ serial-*.txt
 opctl-*.txt
 e2e-*.txt
 stress-*.txt
+file-*.txt
+both-*.txt
+replay-cpp*
+replay-src.zcm
+replay-dst.zcm
 zcmesh.hopskip
 rt-*.txt
 .DS_Store

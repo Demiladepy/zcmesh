@@ -40,6 +40,14 @@ Expect `mesh_failover>0` and `SMOKE_OK`.
 
 Capture → inspect: every frame `hop_idx=2`, `last_hop=100%`.
 
+### E — File-sourced samples (not synthetic sine)
+
+```powershell
+.\scripts\soak-file-source.ps1
+```
+
+`fixtures/samples.txt` ints appear on the wire (`inspect --expect-raws`).
+
 ## Numbers to quote
 
 ```powershell

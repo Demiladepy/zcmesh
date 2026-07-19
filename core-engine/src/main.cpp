@@ -13,6 +13,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <string>
 #include <thread>
 
 #if defined(_WIN32)
@@ -414,7 +415,25 @@ int main(int argc, char** argv) {
                 break;
             }
         } else if (file_path) {
-            if (!(file_in >> raw)) {
+            bool got = false;
+            while (file_in) {
+                std::string tok;
+                if (!(file_in >> tok)) {
+                    break;
+                }
+                if (tok.empty() || tok[0] == '#') {
+                    continue;
+                }
+                char* end = nullptr;
+                const long v = std::strtol(tok.c_str(), &end, 10);
+                if (end == tok.c_str() || *end != '\0') {
+                    continue;
+                }
+                raw = static_cast<int32_t>(v);
+                got = true;
+                break;
+            }
+            if (!got) {
                 break;
             }
         } else {

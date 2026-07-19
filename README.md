@@ -74,6 +74,9 @@ Transport: `auto` (TCP + mesh fallback with unsent-only failover), `tcp`, `udp` 
 .\scripts\soak-preferred-hop-cpp.ps1
 .\scripts\soak-operator-control.ps1
 .\scripts\soak-capture-tcp.ps1
+.\scripts\soak-capture-both.ps1
+.\scripts\soak-file-source.ps1
+.\scripts\soak-replay-cpp.ps1
 .\scripts\soak-multiedge.ps1
 .\scripts\ci-operator-e2e.ps1
 ```
@@ -108,3 +111,5 @@ Typical: **24 B** vs ~**67 B** JSON line, **~93%** encode CPU reduction.
 - Operator UI: live node table with hop/last + hop histogram rates (binds `OperatorRuntime`)
 - Operator: NIO TCP+UDP, SPSC ring, seq gaps, `.zcm` record (`record=path.zcm`)
 - CI `e2e-windows`: edge→Java smoke + multi-edge stress; see [DEMO.md](DEMO.md) for judge path
+- `fixtures/samples.txt` + `soak-file-source`: edge `--file` values survive wire (`--expect-raws`)
+- Capture `--mode both` + C++ capture→replay→recapture soaks in CI
