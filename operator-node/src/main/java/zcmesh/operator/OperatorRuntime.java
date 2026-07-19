@@ -1,5 +1,6 @@
 package zcmesh.operator;
 
+import zcmesh.net.ControlClient;
 import zcmesh.net.FrameReceiver;
 import zcmesh.net.StatsServer;
 import zcmesh.pipeline.MetricsSampler;
@@ -12,13 +13,14 @@ import java.nio.file.Path;
 
 /**
  * Headless operator runtime — start/stop without JavaFX.
- * Future UI should own one of these and bind to pipeline()/sampler().
+ * Future UI should own one of these and bind to pipeline()/sampler()/control().
  */
 public final class OperatorRuntime implements AutoCloseable {
     private final TelemetryPipeline pipeline;
     private final MetricsSampler sampler;
     private final FrameReceiver receiver;
     private final StatsServer stats;
+    private final ControlClient control;
     private final Thread rxThread;
     private final Thread statsThread;
     private final ZcmWriter recorder;
@@ -26,10 +28,16 @@ public final class OperatorRuntime implements AutoCloseable {
     private final int statsPort;
 
     public OperatorRuntime(int telemetryPort, int ringPow2, Path recordPath) throws IOException {
-        this(telemetryPort, ringPow2, recordPath, true);
+        this(telemetryPort, ringPow2, recordPath, true, null);
     }
 
     public OperatorRuntime(int telemetryPort, int ringPow2, Path recordPath, boolean tcpEnabled)
+            throws IOException {
+        this(telemetryPort, ringPow2, recordPath, tcpEnabled, null);
+    }
+
+    public OperatorRuntime(
+            int telemetryPort, int ringPow2, Path recordPath, boolean tcpEnabled, String controlEndpoint)
             throws IOException {
         this.telemetryPort = telemetryPort;
         this.statsPort = telemetryPort + 9;
@@ -37,6 +45,9 @@ public final class OperatorRuntime implements AutoCloseable {
         this.sampler = new MetricsSampler(pipeline);
         this.receiver = new FrameReceiver(telemetryPort, pipeline, tcpEnabled);
         this.stats = new StatsServer(statsPort, sampler);
+        this.control = controlEndpoint != null && !controlEndpoint.isEmpty()
+                ? ControlClient.parse(controlEndpoint)
+                : null;
         this.recorder = recordPath != null ? new ZcmWriter(recordPath) : null;
         this.rxThread = new Thread(receiver, "frame-receiver");
         this.statsThread = new Thread(stats, "stats-server");
@@ -47,7 +58,8 @@ public final class OperatorRuntime implements AutoCloseable {
     public void start() {
         rxThread.start();
         statsThread.start();
-        System.err.println("OperatorRuntime telemetry=" + telemetryPort + " stats=" + statsPort);
+        System.err.println("OperatorRuntime telemetry=" + telemetryPort + " stats=" + statsPort
+                + (control != null ? " control=on" : ""));
     }
 
     public TelemetryPipeline pipeline() {
@@ -60,6 +72,25 @@ public final class OperatorRuntime implements AutoCloseable {
 
     public ZcmWriter recorder() {
         return recorder;
+    }
+
+    /** Null if no --control endpoint was configured. */
+    public ControlClient control() {
+        return control;
+    }
+
+    public void setHopSkip(int nodeId, int mask) throws IOException {
+        if (control == null) {
+            throw new IllegalStateException("no control endpoint configured");
+        }
+        control.setSkip(nodeId, mask);
+    }
+
+    public void clearHopSkip(int nodeId) throws IOException {
+        if (control == null) {
+            throw new IllegalStateException("no control endpoint configured");
+        }
+        control.clear(nodeId);
     }
 
     public int telemetryPort() {
@@ -92,6 +123,9 @@ public final class OperatorRuntime implements AutoCloseable {
         stats.stop();
         rxThread.interrupt();
         statsThread.interrupt();
+        if (control != null) {
+            control.close();
+        }
         if (recorder != null) {
             recorder.close();
         }

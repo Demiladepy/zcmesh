@@ -27,7 +27,7 @@ if (-not (Test-Path $Zcm) -or (Get-Item $Zcm).Length -lt 40) {
     exit 1
 }
 
-& (Join-Path $Bin "zcmesh_inspect.exe") $Zcm
+& (Join-Path $Bin "zcmesh_inspect.exe") $Zcm --expect-gaps-max 0
 if ($LASTEXITCODE -ne 0) {
     Write-Host "INSPECT_FAIL"
     exit 1

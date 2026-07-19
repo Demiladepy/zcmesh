@@ -79,6 +79,37 @@ int main() {
     std::fclose(f);
     std::remove(path.c_str());
 
+    /* Streaming write: header count 0, append frames, rewrite header. */
+    {
+        const std::string spath = temp_path() + ".stream";
+        FILE* sf = std::fopen(spath.c_str(), "wb+");
+        expect(sf != nullptr, "stream open");
+        if (sf) {
+            zcmesh_zcm_header sh{};
+            sh.magic = ZCMESH_ZCM_MAGIC;
+            sh.version = ZCMESH_ZCM_VERSION;
+            sh.frame_count = 0;
+            expect(std::fwrite(&sh, 1, sizeof(sh), sf) == sizeof(sh), "stream hdr0");
+            constexpr uint64_t SN = 5;
+            for (uint64_t i = 0; i < SN; ++i) {
+                expect(std::fwrite(&frames[i], 1, ZCMESH_WIRE_FRAME_SIZE, sf) == ZCMESH_WIRE_FRAME_SIZE,
+                       "stream frame");
+            }
+            sh.frame_count = SN;
+            expect(std::fseek(sf, 0, SEEK_SET) == 0, "stream seek");
+            expect(std::fwrite(&sh, 1, sizeof(sh), sf) == sizeof(sh), "stream hdr rewrite");
+            std::fclose(sf);
+
+            sf = std::fopen(spath.c_str(), "rb");
+            expect(sf != nullptr, "stream reopen");
+            zcmesh_zcm_header rh2{};
+            expect(std::fread(&rh2, 1, sizeof(rh2), sf) == sizeof(rh2), "stream read hdr");
+            expect(rh2.frame_count == SN, "stream count rewritten");
+            std::fclose(sf);
+            std::remove(spath.c_str());
+        }
+    }
+
     if (g_fails == 0) {
         std::printf("zcmesh_test_zcm: OK\n");
         return 0;

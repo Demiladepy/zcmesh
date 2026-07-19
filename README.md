@@ -94,7 +94,8 @@ Typical: **24 B** vs ~**67 B** JSON line, **~93%** encode CPU reduction.
 - `soak-preferred-hop-cpp.ps1` / `.sh`: same without Java (CI-gated)
 - Java `ControlClient` / `MeshControl` mirrors C++ control plane
 - CI gates `soak-loss` + failover-cpp + preferred-hop-cpp (Win/Linux)
-- Capture `--mode udp|tcp|both` with TCP magic-scan resync
+- Capture `--mode udp|tcp|both` streams frames to disk (header rewritten on exit)
+- `OperatorRuntime.control()` / `setHopSkip` / `clearHopSkip` for mesh control
 - Inspect: per-node seq gaps, hop index / LAST_HOP, SUMMARY line
 - Replay: `--pace capture` (default) follows `timestamp_lo` deltas; `--rate` for fixed Hz
 - Operator: NIO TCP+UDP, SPSC ring, seq gaps, `.zcm` record (`record=path.zcm`)

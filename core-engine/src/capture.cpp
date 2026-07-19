@@ -33,7 +33,8 @@ void usage(const char* a0) {
     std::fprintf(stderr,
                  "Usage: %s --listen host:port --out path.zcm [--seconds N]\n"
                  "          [--mode udp|tcp|both]\n"
-                 "  Capture verified frames into .zcm. TCP path magic-scans after desync.\n",
+                 "  Capture verified frames into .zcm (streamed; header rewritten on exit).\n"
+                 "  TCP path magic-scans after desync.\n",
                  a0);
 }
 
@@ -70,14 +71,15 @@ int find_magic(const uint8_t* data, int len, int from) {
     return -1;
 }
 
-void append_frame(std::vector<uint8_t>& blob, const zcmesh_wire_frame& frame, uint64_t& ok) {
-    const auto* p = reinterpret_cast<const uint8_t*>(&frame);
-    blob.insert(blob.end(), p, p + ZCMESH_WIRE_FRAME_SIZE);
+void append_frame(FILE* out, const zcmesh_wire_frame& frame, uint64_t& ok) {
+    if (std::fwrite(&frame, 1, ZCMESH_WIRE_FRAME_SIZE, out) != ZCMESH_WIRE_FRAME_SIZE) {
+        return;
+    }
     ++ok;
 }
 
 /* Decode aligned/resync TCP stream buffer in-place (compact remaining). */
-void decode_tcp_stream(std::vector<uint8_t>& stream, std::vector<uint8_t>& blob,
+void decode_tcp_stream(std::vector<uint8_t>& stream, FILE* out,
                        uint64_t& ok, uint64_t& drop, uint64_t& resync) {
     int pos = 0;
     const int n = static_cast<int>(stream.size());
@@ -103,12 +105,24 @@ void decode_tcp_stream(std::vector<uint8_t>& stream, std::vector<uint8_t>& blob,
             ++pos;
             continue;
         }
-        append_frame(blob, frame, ok);
+        append_frame(out, frame, ok);
         pos += static_cast<int>(ZCMESH_WIRE_FRAME_SIZE);
     }
     if (pos > 0) {
         stream.erase(stream.begin(), stream.begin() + pos);
     }
+}
+
+bool rewrite_header(FILE* f, uint64_t frame_count) {
+    zcmesh_zcm_header hdr{};
+    hdr.magic = ZCMESH_ZCM_MAGIC;
+    hdr.version = ZCMESH_ZCM_VERSION;
+    hdr.reserved = 0;
+    hdr.frame_count = frame_count;
+    if (std::fseek(f, 0, SEEK_SET) != 0) {
+        return false;
+    }
+    return std::fwrite(&hdr, 1, sizeof(hdr), f) == sizeof(hdr);
 }
 
 } // namespace
@@ -224,15 +238,30 @@ int main(int argc, char** argv) {
         set_nonblocking(tcp_fd);
     }
 
-    std::vector<uint8_t> blob;
-    blob.reserve(1024 * 1024);
+    FILE* out = std::fopen(out_path, "wb+");
+    if (!out) {
+        std::fprintf(stderr, "cannot write %s\n", out_path);
+        close_fd(udp_fd);
+        close_fd(tcp_fd);
+        zcmesh::net_shutdown();
+        return 1;
+    }
+    if (!rewrite_header(out, 0)) {
+        std::fprintf(stderr, "header write failed\n");
+        std::fclose(out);
+        close_fd(udp_fd);
+        close_fd(tcp_fd);
+        zcmesh::net_shutdown();
+        return 1;
+    }
+
     uint64_t ok = 0;
     uint64_t drop = 0;
     uint64_t resync = 0;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
 
     const char* mname = mode == Mode::Tcp ? "tcp" : mode == Mode::Both ? "both" : "udp";
-    std::fprintf(stderr, "zcmesh_capture listen=%s:%u mode=%s out=%s seconds=%d\n",
+    std::fprintf(stderr, "zcmesh_capture listen=%s:%u mode=%s out=%s seconds=%d (streaming)\n",
                  ep.host, ep.port, mname, out_path, seconds);
 
     uint8_t buf[64 * 1024];
@@ -310,7 +339,7 @@ int main(int argc, char** argv) {
 #endif
             } else {
                 tcp_stream.insert(tcp_stream.end(), buf, buf + n);
-                decode_tcp_stream(tcp_stream, blob, ok, drop, resync);
+                decode_tcp_stream(tcp_stream, out, ok, drop, resync);
             }
         }
 
@@ -335,7 +364,7 @@ int main(int argc, char** argv) {
                 ++drop;
                 continue;
             }
-            append_frame(blob, frame, ok);
+            append_frame(out, frame, ok);
         }
     }
 
@@ -343,28 +372,20 @@ int main(int argc, char** argv) {
     close_fd(tcp_fd);
     close_fd(udp_fd);
 
-    FILE* f = std::fopen(out_path, "wb");
-    if (!f) {
-        std::fprintf(stderr, "cannot write %s\n", out_path);
+    if (!rewrite_header(out, ok)) {
+        std::fprintf(stderr, "final header rewrite failed\n");
+        std::fclose(out);
         zcmesh::net_shutdown();
         return 1;
     }
-    zcmesh_zcm_header hdr{};
-    hdr.magic = ZCMESH_ZCM_MAGIC;
-    hdr.version = ZCMESH_ZCM_VERSION;
-    hdr.reserved = 0;
-    hdr.frame_count = ok;
-    std::fwrite(&hdr, 1, sizeof(hdr), f);
-    if (!blob.empty()) {
-        std::fwrite(blob.data(), 1, blob.size(), f);
-    }
-    std::fclose(f);
+    std::fflush(out);
+    std::fclose(out);
 
-    std::fprintf(stderr, "captured ok=%llu drop=%llu resync=%llu bytes=%zu -> %s\n",
+    std::fprintf(stderr, "captured ok=%llu drop=%llu resync=%llu bytes=%llu -> %s\n",
                  static_cast<unsigned long long>(ok),
                  static_cast<unsigned long long>(drop),
                  static_cast<unsigned long long>(resync),
-                 blob.size(), out_path);
+                 static_cast<unsigned long long>(ok * ZCMESH_WIRE_FRAME_SIZE), out_path);
     zcmesh::net_shutdown();
     return ok > 0 ? 0 : 1;
 }
