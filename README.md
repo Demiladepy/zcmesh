@@ -44,9 +44,11 @@ Binaries: `zcmesh_edge`, `zcmesh_bench`, `zcmesh_hop`, `zcmesh_ctl`, `zcmesh_cap
 ## Run
 
 ```powershell
-# operator (UI) — telemetry :9900, stats :9909
+# operator (UI) — telemetry :9900, stats :9909; optional control=host:port for hop skip
 cd operator-node
 .\gradlew.bat run
+# with mesh control bar:
+.\gradlew.bat run --args="9900 control=127.0.0.1:9898"
 
 # edge
 cd ..\core-engine\build
@@ -108,8 +110,9 @@ Typical: **24 B** vs ~**67 B** JSON line, **~93%** encode CPU reduction.
 - `demo-serial-hop`: edge → hop0 → hop1(--final) → capture; inspect `--expect-hop-idx 2`
 - Inspect: per-node seq gaps, hop index / LAST_HOP, SUMMARY; `--expect-hop-idx` / `--expect-last-hop-min-pct`
 - Replay: `--pace capture` (default) follows `timestamp_lo` deltas; `--rate` for fixed Hz
-- Operator UI: live node table with hop/last + hop histogram rates (binds `OperatorRuntime`)
+- Operator UI: live node table with hop/last + hop histogram; optional `control=` SET_SKIP/CLEAR bar
 - Operator: NIO TCP+UDP, SPSC ring, seq gaps, `.zcm` record (`record=path.zcm`)
-- CI `e2e-windows`: edge→Java smoke + multi-edge stress; see [DEMO.md](DEMO.md) for judge path
+- `StatsClient` / `statsScrape`: TCP :9909 plaintext scrape (CI parse + e2e live)
+- CI `e2e-windows`: edge→Java smoke + stats scrape + multi-edge stress; see [DEMO.md](DEMO.md)
 - `fixtures/samples.txt` + `soak-file-source`: edge `--file` values survive wire (`--expect-raws`)
 - Capture `--mode both` + C++ capture→replay→recapture soaks in CI

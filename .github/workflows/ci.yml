@@ -112,6 +112,12 @@ jobs:
       - name: Mesh control encode
         run: .\gradlew.bat meshControl --no-daemon
         working-directory: operator-node
+      - name: Stats scrape parse
+        run: .\gradlew.bat statsScrape --no-daemon
+        working-directory: operator-node
+      - name: Stats client live scrape
+        run: .\gradlew.bat statsClient --no-daemon
+        working-directory: operator-node
 
   e2e-windows:
     runs-on: windows-latest

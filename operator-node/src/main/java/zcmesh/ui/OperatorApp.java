@@ -10,10 +10,13 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
+import javafx.scene.control.TextField;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import zcmesh.operator.OperatorRuntime;
@@ -29,8 +32,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Thin structural shell over OperatorRuntime. Swap this later for a richer UI
- * without rewriting receive/stats/pipeline.
+ * Thin structural shell over OperatorRuntime — live counters + optional mesh control.
  */
 public final class OperatorApp extends Application {
     private static final int DEFAULT_PORT = 9900;
@@ -39,6 +41,7 @@ public final class OperatorApp extends Application {
     private ScheduledExecutorService ticker;
     private Label rateLabel;
     private Label statsLabel;
+    private Label controlStatus;
     private final ObservableList<NodeRow> rows = FXCollections.observableArrayList();
     private final Map<Integer, NodeRow> byNode = new HashMap<>();
 
@@ -46,20 +49,24 @@ public final class OperatorApp extends Application {
     public void start(Stage stage) throws Exception {
         int port = DEFAULT_PORT;
         Path recordPath = null;
+        String controlEp = null;
         List<String> raw = getParameters().getRaw();
         for (String arg : raw) {
             if (arg.startsWith("record=")) {
                 recordPath = Path.of(arg.substring("record=".length()));
-            } else {
+            } else if (arg.startsWith("control=")) {
+                controlEp = arg.substring("control=".length());
+            } else if (!arg.isEmpty()) {
                 port = Integer.parseInt(arg);
             }
         }
 
-        runtime = new OperatorRuntime(port, 8192, recordPath);
+        runtime = new OperatorRuntime(port, 8192, recordPath, true, controlEp);
         runtime.start();
 
         rateLabel = new Label("frames/s: 0   bytes/s: 0");
         statsLabel = new Label("ok: 0   crc: 0   gaps: 0   hops: -   last_seq: -");
+        controlStatus = new Label(controlEp != null ? "control: " + controlEp : "control: off");
 
         TableView<NodeRow> table = new TableView<>(rows);
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
@@ -85,14 +92,18 @@ public final class OperatorApp extends Application {
         table.getColumns().add(cLast);
         table.getColumns().add(cTs);
 
-        VBox top = new VBox(6, rateLabel, statsLabel);
+        VBox top = new VBox(6, rateLabel, statsLabel, controlStatus);
         top.setPadding(new Insets(10));
+        if (runtime.control() != null) {
+            top.getChildren().add(buildControlBar());
+        }
+
         BorderPane root = new BorderPane();
         root.setTop(top);
         root.setCenter(table);
 
         stage.setTitle("ZCMesh Operator");
-        stage.setScene(new Scene(root, 720, 420));
+        stage.setScene(new Scene(root, 780, 460));
         stage.show();
 
         ticker = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -103,6 +114,37 @@ public final class OperatorApp extends Application {
         ticker.scheduleAtFixedRate(this::tick, 0, 50, TimeUnit.MILLISECONDS);
         ticker.scheduleAtFixedRate(this::refreshRates, 1, 1, TimeUnit.SECONDS);
         stage.setOnCloseRequest(e -> shutdown());
+    }
+
+    private HBox buildControlBar() {
+        TextField nodeField = new TextField("1");
+        nodeField.setPrefColumnCount(4);
+        TextField maskField = new TextField("1");
+        maskField.setPrefColumnCount(4);
+        Button skip = new Button("SET_SKIP");
+        Button clear = new Button("CLEAR");
+        skip.setOnAction(e -> {
+            try {
+                int node = Integer.parseInt(nodeField.getText().trim());
+                int mask = Integer.parseInt(maskField.getText().trim());
+                runtime.setHopSkip(node, mask);
+                controlStatus.setText("sent SET_SKIP node=" + node + " mask=" + mask);
+            } catch (Exception ex) {
+                controlStatus.setText("control error: " + ex.getMessage());
+            }
+        });
+        clear.setOnAction(e -> {
+            try {
+                int node = Integer.parseInt(nodeField.getText().trim());
+                runtime.clearHopSkip(node);
+                controlStatus.setText("sent CLEAR node=" + node);
+            } catch (Exception ex) {
+                controlStatus.setText("control error: " + ex.getMessage());
+            }
+        });
+        HBox bar = new HBox(8, new Label("node"), nodeField, new Label("mask"), maskField, skip, clear);
+        bar.setPadding(new Insets(0, 0, 4, 0));
+        return bar;
     }
 
     private void tick() {

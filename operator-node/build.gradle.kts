@@ -82,9 +82,24 @@ tasks.register<JavaExec>("controlCli") {
     mainClass.set("zcmesh.net.ControlCli")
 }
 
+tasks.register<JavaExec>("statsScrape") {
+    group = "verification"
+    description = "Parse check (no args) or live scrape: --args='host port [minFrames]'"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("zcmesh.net.StatsScrape")
+}
+
+tasks.register<JavaExec>("statsClient") {
+    group = "verification"
+    description = "Boot OperatorRuntime and scrape StatsServer once"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("zcmesh.net.StatsClientCheck")
+    args(project.findProperty("statsPort")?.toString() ?: "19900")
+}
+
 tasks.register("verifyAll") {
     group = "verification"
-    dependsOn("golden", "zcmRoundtrip", "streamResync", "meshControl")
+    dependsOn("golden", "zcmRoundtrip", "streamResync", "meshControl", "statsScrape", "statsClient")
 }
 
 tasks.withType<JavaCompile> {

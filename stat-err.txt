@@ -1,0 +1,3 @@
+OperatorRuntime telemetry=9900 stats=9909
+StatsServer listening on 9909
+FrameReceiver TCP+UDP listening on 9900
